@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildPatchPreviewCards, createChatMessage, summarizePatchResult, type ChatMessage, type PatchPreviewCard } from "../lib/chat-panel";
 import { blocksToHtml, blocksToMarkdown, type DocumentBlock, type DocumentPatch } from "../lib/document";
 import { shouldUseTextImportFallback } from "../lib/hwp-load";
 
@@ -44,7 +45,12 @@ export default function HwpAiMvp() {
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [models, setModels] = useState<string[]>(["gpt-4.1-mini"]);
   const [selectedModel, setSelectedModel] = useState("gpt-4.1-mini");
-  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    createChatMessage("assistant", "HWP 문서를 열고 원하는 수정 방향을 입력해 주세요. 수정 제안을 만든 뒤 비교 카드에서 확인하고 문서에 반영할 수 있습니다.", "chat-welcome"),
+  ]);
+  const [pendingPatches, setPendingPatches] = useState<DocumentPatch[]>([]);
+  const [previewCards, setPreviewCards] = useState<PatchPreviewCard[]>([]);
 
   const tableCellCount = useMemo(() => blocks.filter((block) => block.type === "tableCell").length, [blocks]);
   const paragraphCount = useMemo(() => blocks.filter((block) => block.type === "paragraph").length, [blocks]);
@@ -116,7 +122,10 @@ export default function HwpAiMvp() {
       const result = await requestRhwp<{ pageCount: number }>("loadFile", { fileName: file.name, data });
       setFileName(file.name);
       setBlocks([]);
+      setPendingPatches([]);
+      setPreviewCards([]);
       setStatus(`문서를 열었습니다. 쪽 수: ${result.pageCount}`);
+      setChatMessages((messages) => [...messages, createChatMessage("system", `${file.name} 문서를 열었습니다. 이제 수정 지시를 입력할 수 있습니다.`)]);
     } catch (error) {
       if (!shouldUseTextImportFallback(error)) {
         setStatus(error instanceof Error ? error.message : String(error));
@@ -136,7 +145,10 @@ export default function HwpAiMvp() {
         const refreshed = await requestRhwp<DocumentBlock[]>("extractTextBlocks");
         setFileName(file.name.replace(/\.[^.]+$/, "") + "-recovered.hwp");
         setBlocks(refreshed);
+        setPendingPatches([]);
+        setPreviewCards([]);
         setStatus(`원본 HWP 메타데이터 오류 때문에 텍스트 복구 방식으로 열었습니다. 새 문서 쪽 수: ${created.pageCount}`);
+        setChatMessages((messages) => [...messages, createChatMessage("system", "문서를 텍스트 복구 방식으로 열었습니다. 복구된 내용을 기준으로 수정할 수 있습니다.")]);
       } catch (recoverError) {
         setStatus(recoverError instanceof Error ? recoverError.message : String(recoverError));
       }
@@ -151,6 +163,7 @@ export default function HwpAiMvp() {
       const result = await requestRhwp<DocumentBlock[]>("extractTextBlocks");
       setBlocks(result);
       setStatus(`본문 ${result.filter((block) => block.type === "paragraph").length}개, 표 셀 ${result.filter((block) => block.type === "tableCell").length}개를 추출했습니다.`);
+      setChatMessages((messages) => [...messages, createChatMessage("system", `본문 ${result.filter((block) => block.type === "paragraph").length}개와 표 셀 ${result.filter((block) => block.type === "tableCell").length}개를 읽었습니다.`)]);
       return result;
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -160,32 +173,64 @@ export default function HwpAiMvp() {
     }
   }
 
-  async function applyAiEdit() {
+  async function createAiSuggestion() {
+    const prompt = instruction.trim();
+    if (!prompt) {
+      setStatus("수정 지시를 입력해 주세요.");
+      return;
+    }
     setIsBusy(true);
+    setChatMessages((messages) => [...messages, createChatMessage("user", prompt), createChatMessage("assistant", "문서를 읽고 수정 제안을 만드는 중입니다.")]);
     try {
       const currentBlocks = blocks.length ? blocks : await requestRhwp<DocumentBlock[]>("extractTextBlocks");
       setBlocks(currentBlocks);
       const response = await fetch("/api/ai/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruction, blocks: currentBlocks, model: selectedModel }),
+        body: JSON.stringify({ instruction: prompt, blocks: currentBlocks, model: selectedModel }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "AI 수정에 실패했습니다");
       const patches = (data.patches ?? []) as DocumentPatch[];
-      if (patches.length === 0) {
-        setStatus("AI가 수정할 내용을 찾지 못했습니다.");
-        return;
-      }
-      await requestRhwp("applyTextPatches", { patches });
-      const refreshed = await requestRhwp<DocumentBlock[]>("extractTextBlocks");
-      setBlocks(refreshed);
-      setStatus(`AI 수정 패치 ${patches.length}개를 문서에 반영했습니다.`);
+      setPendingPatches(patches);
+      setPreviewCards(buildPatchPreviewCards(currentBlocks, patches));
+      const summary = summarizePatchResult(patches);
+      setStatus(summary);
+      setChatMessages((messages) => [...messages, createChatMessage("assistant", summary)]);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message);
+      setChatMessages((messages) => [...messages, createChatMessage("assistant", `수정 제안을 만들지 못했습니다. ${message}`)]);
     } finally {
       setIsBusy(false);
     }
+  }
+
+  async function applyPendingAiEdit() {
+    if (pendingPatches.length === 0) {
+      setStatus("반영할 수정 제안이 없습니다.");
+      return;
+    }
+    setIsBusy(true);
+    try {
+      await requestRhwp("applyTextPatches", { patches: pendingPatches });
+      const refreshed = await requestRhwp<DocumentBlock[]>("extractTextBlocks");
+      setBlocks(refreshed);
+      setStatus(`수정 제안 ${pendingPatches.length}개를 문서에 반영했습니다.`);
+      setChatMessages((messages) => [...messages, createChatMessage("system", `수정 제안 ${pendingPatches.length}개를 문서에 반영했습니다.`)]);
+      setPendingPatches([]);
+      setPreviewCards([]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message);
+      setChatMessages((messages) => [...messages, createChatMessage("assistant", `문서 반영에 실패했습니다. ${message}`)]);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function useQuickInstruction(nextInstruction: string) {
+    setInstruction(nextInstruction);
   }
 
   async function exportHwp() {
@@ -244,7 +289,8 @@ export default function HwpAiMvp() {
 
       <section className="toolbar">
         <button disabled={isBusy} onClick={extractBlocks}>본문과 표 추출</button>
-        <button disabled={isBusy} onClick={applyAiEdit}>AI 수정 반영</button>
+        <button disabled={isBusy} onClick={createAiSuggestion}>수정 제안 만들기</button>
+        <button disabled={isBusy || pendingPatches.length === 0} onClick={applyPendingAiEdit}>제안 문서에 반영</button>
         <button disabled={isBusy} onClick={exportHwp}>HWP 저장</button>
         <button disabled={isBusy} onClick={exportHwpx}>HWPX 저장</button>
         <button disabled={isBusy} onClick={exportMarkdown}>마크다운 저장</button>
@@ -253,30 +299,6 @@ export default function HwpAiMvp() {
           인공지능 설정
         </button>
       </section>
-
-      {settingsOpen && (
-        <section className="settingsCard">
-          <div>
-            <strong>코덱스 로그인</strong>
-            <p>{codexStatus?.message ?? "코덱스 설정을 확인하는 중입니다."}</p>
-            <code>{codexStatus?.authFile ?? "~/.codex/auth.json"}</code>
-          </div>
-          <div className="settingsActions">
-            <label>
-              사용할 모델
-              <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
-                {models.map((model) => <option key={model} value={model}>{model}</option>)}
-              </select>
-            </label>
-            <button className="secondaryButton" type="button" onClick={refreshCodexSettings}>상태 새로고침</button>
-          </div>
-          <p className={codexConnected ? "goodNotice" : "warnNotice"}>
-            {codexConnected
-              ? `선택한 ${selectedModel} 모델로 HWP 내용을 수정합니다.`
-              : "터미널에서 codex login 명령을 실행한 뒤 상태 새로고침을 눌러 주세요."}
-          </p>
-        </section>
-      )}
 
       <section className="panelGrid">
         <div className="card editorCard">
@@ -287,18 +309,79 @@ export default function HwpAiMvp() {
           <iframe ref={frameRef} title="HWP 편집기" src="/rhwp-studio/index.html" />
         </div>
 
-        <aside className="card sideCard">
-          <strong>AI 지시</strong>
-          <textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} />
-          <div className="stats">
+        <aside className="card sideCard chatPanel">
+          <div className="assistantHeader">
+            <div>
+              <span className="assistantKicker">문서 편집 대화</span>
+              <strong>인공지능 문서 도우미</strong>
+            </div>
+            <button className="iconButton" type="button" onClick={() => setSettingsOpen((value) => !value)}>설정</button>
+          </div>
+
+          {settingsOpen && (
+            <div className="inlineSettings">
+              <div>
+                <span className={codexConnected ? "statusDot good" : "statusDot warn"} />
+                {codexStatus?.message ?? "코덱스 설정을 확인하는 중입니다."}
+              </div>
+              <label>
+                모델
+                <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
+                  {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              </label>
+              <button className="secondaryButton" type="button" onClick={refreshCodexSettings}>상태 새로고침</button>
+            </div>
+          )}
+
+          <div className="documentMiniStats">
             <div><span>본문</span><b>{paragraphCount}</b></div>
             <div><span>표 셀</span><b>{tableCellCount}</b></div>
+            <div><span>제안</span><b>{pendingPatches.length}</b></div>
           </div>
+
+          <div className="chatStream" aria-label="문서 편집 대화 내용">
+            {chatMessages.map((message) => (
+              <div key={message.id} className={`chatBubble ${message.role}`}>
+                <span>{message.role === "user" ? "영석님" : message.role === "assistant" ? "도우미" : "문서 상태"}</span>
+                <p>{message.text}</p>
+              </div>
+            ))}
+          </div>
+
+          {previewCards.length > 0 && (
+            <div className="proposalStack">
+              <div className="proposalHeader">
+                <strong>수정 전후 비교</strong>
+                <button className="secondaryButton" disabled={isBusy} onClick={() => { setPendingPatches([]); setPreviewCards([]); }}>제안 비우기</button>
+              </div>
+              {previewCards.slice(0, 5).map((card) => (
+                <article className="proposalCard" key={card.id}>
+                  <span>{card.label}</span>
+                  <div><b>기존</b><p>{card.before || "빈 내용"}</p></div>
+                  <div><b>수정</b><p>{card.after}</p></div>
+                </article>
+              ))}
+              {previewCards.length > 5 && <p className="moreNotice">나머지 {previewCards.length - 5}개 제안도 문서 반영에 포함됩니다.</p>}
+            </div>
+          )}
+
+          <div className="quickPrompts">
+            <button type="button" onClick={() => useQuickInstruction("공문 문체로 자연스럽게 다듬고 오탈자를 수정해 주세요.")}>공문체</button>
+            <button type="button" onClick={() => useQuickInstruction("맞춤법과 띄어쓰기를 바로잡고 어색한 표현을 자연스럽게 고쳐 주세요.")}>맞춤법</button>
+            <button type="button" onClick={() => useQuickInstruction("핵심은 유지하면서 문장을 더 간결하게 정리해 주세요.")}>간결화</button>
+            <button type="button" onClick={() => useQuickInstruction("표 안의 내용을 보기 좋게 정리하고 항목명을 명확하게 바꿔 주세요.")}>표 정리</button>
+          </div>
+
+          <div className="composer">
+            <textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="문서에 원하는 수정 지시를 입력하세요" />
+            <div className="composerActions">
+              <button disabled={isBusy} onClick={createAiSuggestion}>보내기</button>
+              <button className="secondaryButton" disabled={isBusy || pendingPatches.length === 0} onClick={applyPendingAiEdit}>문서에 반영</button>
+            </div>
+          </div>
+
           <p className="status">{isBusy ? "처리 중입니다..." : status}</p>
-          <div className="preview">
-            <strong>추출 미리보기</strong>
-            <pre>{blocks.slice(0, 8).map((block) => `${block.type}: ${block.text}`).join("\n") || "아직 추출된 내용이 없습니다."}</pre>
-          </div>
         </aside>
       </section>
     </main>

@@ -35,14 +35,51 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
 .goodNotice, .warnNotice { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-radius: 12px; }
 .goodNotice { background: #ecfdf5; color: #065f46; }
 .warnNotice { background: #fff7ed; color: #9a3412; }
-.panelGrid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: stretch; }
+.panelGrid { display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 18px; align-items: stretch; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 18px 60px rgba(15, 23, 42, .08); overflow: hidden; }
 .cardHeader { height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--line); color: var(--muted); }
 .cardHeader strong { color: var(--ink); }
 .editorCard iframe { display: block; width: 100%; height: calc(100vh - 240px); min-height: 620px; border: 0; background: white; }
 .sideCard { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-.sideCard textarea { min-height: 140px; resize: vertical; border: 1px solid var(--line); border-radius: 16px; padding: 14px; outline: none; }
+.sideCard textarea { min-height: 112px; resize: vertical; border: 1px solid var(--line); border-radius: 16px; padding: 14px; outline: none; }
 .sideCard textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, .15); }
+.chatPanel { height: calc(100vh - 240px); min-height: 620px; background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%); }
+.assistantHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.assistantHeader strong { display: block; font-size: 18px; }
+.assistantKicker { display: block; color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .08em; margin-bottom: 4px; }
+.iconButton { padding: 9px 12px; border-radius: 999px; background: #111827; }
+.inlineSettings { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: #f8fafc; color: var(--muted); font-size: 13px; }
+.inlineSettings label { display: grid; gap: 6px; font-weight: 700; color: var(--ink); }
+.inlineSettings select { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: white; color: var(--ink); }
+.statusDot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 999px; }
+.statusDot.good { background: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, .12); }
+.statusDot.warn { background: #f97316; box-shadow: 0 0 0 4px rgba(249, 115, 22, .12); }
+.documentMiniStats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.documentMiniStats div { border: 1px solid var(--line); border-radius: 14px; padding: 10px; background: #fff; }
+.documentMiniStats span { display: block; color: var(--muted); font-size: 12px; }
+.documentMiniStats b { font-size: 22px; }
+.chatStream { display: flex; flex: 1; min-height: 160px; flex-direction: column; gap: 10px; overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 18px; background: #f1f5f9; }
+.chatBubble { max-width: 88%; padding: 10px 12px; border-radius: 16px; line-height: 1.5; box-shadow: 0 8px 24px rgba(15, 23, 42, .06); }
+.chatBubble span { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 800; color: var(--muted); }
+.chatBubble p { margin: 0; white-space: pre-wrap; }
+.chatBubble.user { align-self: flex-end; background: var(--accent); color: white; border-bottom-right-radius: 5px; }
+.chatBubble.user span { color: rgba(255, 255, 255, .75); }
+.chatBubble.assistant { align-self: flex-start; background: white; color: var(--ink); border-bottom-left-radius: 5px; }
+.chatBubble.system { align-self: center; max-width: 96%; background: #e0f2fe; color: #075985; text-align: center; box-shadow: none; }
+.proposalStack { display: flex; flex-direction: column; gap: 10px; max-height: 270px; overflow: auto; padding: 12px; border-radius: 18px; border: 1px solid #bfdbfe; background: #eff6ff; }
+.proposalHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.proposalHeader button { padding: 8px 10px; font-size: 12px; }
+.proposalCard { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: white; }
+.proposalCard > span { width: fit-content; padding: 4px 8px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 12px; font-weight: 800; }
+.proposalCard div { display: grid; gap: 3px; }
+.proposalCard b { color: var(--muted); font-size: 12px; }
+.proposalCard p { margin: 0; line-height: 1.45; }
+.moreNotice { margin: 0; color: var(--muted); font-size: 13px; }
+.quickPrompts { display: flex; flex-wrap: wrap; gap: 8px; }
+.quickPrompts button { padding: 8px 10px; border-radius: 999px; background: #e2e8f0; color: #172033; font-size: 12px; }
+.composer { display: grid; gap: 10px; }
+.composer textarea { min-height: 96px; max-height: 180px; }
+.composerActions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stats div { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: #f8fafc; }
 .stats span { display: block; color: var(--muted); font-size: 13px; }
