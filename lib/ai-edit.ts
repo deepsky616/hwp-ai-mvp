@@ -5,10 +5,20 @@ import { join } from "node:path";
 import { getOpenAiAuthorization } from "./codex-auth";
 import type { DocumentBlock, DocumentPatch } from "./document";
 
+export type AiProvider = "openai" | "ollama" | "mlx" | "custom";
+
+export type AiSettings = {
+  provider?: AiProvider;
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+};
+
 export type AiEditRequest = {
   instruction: string;
   blocks: DocumentBlock[];
   model?: string;
+  aiSettings?: AiSettings;
 };
 
 function parseJsonFromText(text: string): { patches?: DocumentPatch[] } {
@@ -26,8 +36,29 @@ function parseJsonFromText(text: string): { patches?: DocumentPatch[] } {
 function sanitizeModel(model?: string): string {
   const trimmed = model?.trim();
   if (!trimmed) return process.env.OPENAI_MODEL || "gpt-4.1-mini";
-  if (!/^[a-zA-Z0-9._:-]+$/.test(trimmed)) return "gpt-4.1-mini";
+  if (!/^[a-zA-Z0-9._:\/-]+$/.test(trimmed)) return "gpt-4.1-mini";
   return trimmed;
+}
+
+function sanitizeBaseUrl(baseUrl: string | undefined, fallback: string): string {
+  const trimmed = baseUrl?.trim() || fallback;
+  try {
+    const url = new URL(trimmed);
+    if (!["http:", "https:"].includes(url.protocol)) return fallback;
+    return trimmed.replace(/\/+$/, "");
+  } catch {
+    return fallback;
+  }
+}
+
+function resolveRequestModel(request: AiEditRequest): string {
+  return sanitizeModel(request.aiSettings?.model || request.model);
+}
+
+function getClientOpenAiAuthorization(settings?: AiSettings) {
+  const key = settings?.apiKey?.trim();
+  if (!key) return null;
+  return { header: `Bearer ${key}`, source: "api-key" as const };
 }
 
 export function buildAiEditPayload({ instruction, blocks, model }: AiEditRequest) {
@@ -175,14 +206,99 @@ async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<Docum
   }
 }
 
+function buildChatMessages(request: AiEditRequest) {
+  const payload = buildAiEditPayload({ ...request, model: resolveRequestModel(request) });
+  return payload.input.map((item) => ({ role: item.role, content: item.content }));
+}
+
+function extractChatResponseText(data: any): string {
+  if (typeof data?.message?.content === "string") return data.message.content;
+  if (typeof data?.choices?.[0]?.message?.content === "string") return data.choices[0].message.content;
+  return extractResponseText(data);
+}
+
+async function requestPatchesWithOpenAiCompatible(request: AiEditRequest, baseUrl: string, authorizationHeader?: string): Promise<DocumentPatch[]> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (authorizationHeader) headers.Authorization = authorizationHeader;
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: resolveRequestModel(request),
+      messages: buildChatMessages(request),
+      temperature: 0,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`모델 호출에 실패했습니다: ${detail}`);
+  }
+
+  const data = await response.json();
+  return parseJsonFromText(extractChatResponseText(data)).patches ?? [];
+}
+
+async function requestPatchesWithOllama(request: AiEditRequest): Promise<DocumentPatch[]> {
+  const baseUrl = sanitizeBaseUrl(request.aiSettings?.baseUrl, "http://localhost:11434");
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: resolveRequestModel(request),
+      messages: buildChatMessages(request),
+      stream: false,
+      options: { temperature: 0 },
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`모델 호출에 실패했습니다: ${detail}`);
+  }
+
+  const data = await response.json();
+  return parseJsonFromText(extractChatResponseText(data)).patches ?? [];
+}
+
+export async function testAiConnection(settings: AiSettings): Promise<{ ok: boolean; message: string }> {
+  const provider = settings.provider || "openai";
+  if (provider === "ollama") {
+    const baseUrl = sanitizeBaseUrl(settings.baseUrl, "http://localhost:11434");
+    const response = await fetch(`${baseUrl}/api/tags`);
+    if (!response.ok) throw new Error(`연결 테스트에 실패했습니다: ${await response.text()}`);
+    return { ok: true, message: "올라마 서버 연결에 성공했습니다." };
+  }
+
+  const baseUrl = provider === "openai"
+    ? "https://api.openai.com"
+    : sanitizeBaseUrl(settings.baseUrl, provider === "mlx" ? "http://localhost:8080" : "http://localhost:8080");
+  const headers: Record<string, string> = {};
+  const key = settings.apiKey?.trim();
+  if (key) headers.Authorization = `Bearer ${key}`;
+  if (provider === "openai" && !key) throw new Error("API 키를 입력해 주세요.");
+
+  const response = await fetch(`${baseUrl}/v1/models`, { headers });
+  if (!response.ok) throw new Error(`연결 테스트에 실패했습니다: ${await response.text()}`);
+  return { ok: true, message: "인공지능 서버 연결에 성공했습니다." };
+}
+
 export async function requestDocumentPatches(request: AiEditRequest): Promise<DocumentPatch[]> {
-  const authorization = getOpenAiAuthorization();
+  const provider = request.aiSettings?.provider || "openai";
+  if (provider === "ollama") return requestPatchesWithOllama(request);
+  if (provider === "mlx" || provider === "custom") {
+    const baseUrl = sanitizeBaseUrl(request.aiSettings?.baseUrl, "http://localhost:8080");
+    const key = request.aiSettings?.apiKey?.trim();
+    return requestPatchesWithOpenAiCompatible(request, baseUrl, key ? `Bearer ${key}` : undefined);
+  }
+
+  const authorization = getClientOpenAiAuthorization(request.aiSettings) || getOpenAiAuthorization();
   if (!authorization) {
-    throw new Error("코덱스 로그인이 필요합니다. 터미널에서 codex login 명령을 실행해 주세요.");
+    throw new Error("인공지능 설정에서 API 키를 입력하거나 서버 환경 변수를 설정해 주세요.");
   }
 
   if (authorization.source === "codex-oauth") {
-    return requestPatchesWithCodexCli(request);
+    return requestPatchesWithCodexCli({ ...request, model: resolveRequestModel(request) });
   }
 
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -191,7 +307,7 @@ export async function requestDocumentPatches(request: AiEditRequest): Promise<Do
       Authorization: authorization.header,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(buildAiEditPayload(request)),
+    body: JSON.stringify(buildAiEditPayload({ ...request, model: resolveRequestModel(request) })),
   });
 
   if (!response.ok) {

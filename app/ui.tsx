@@ -20,6 +20,15 @@ type CodexStatus = {
   message: string;
 };
 
+type AiProvider = "openai" | "ollama" | "mlx" | "custom";
+
+type AiSettings = {
+  provider: AiProvider;
+  apiKey?: string;
+  baseUrl?: string;
+  model: string;
+};
+
 function downloadBytes(fileName: string, bytes: Uint8Array, mime: string) {
   const safeBytes = bytes.slice();
   const blob = new Blob([safeBytes.buffer], { type: mime });
@@ -45,6 +54,10 @@ export default function HwpAiMvp() {
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [models, setModels] = useState<string[]>(["gpt-4.1-mini"]);
   const [selectedModel, setSelectedModel] = useState("gpt-4.1-mini");
+  const [aiProvider, setAiProvider] = useState<AiProvider>("openai");
+  const [aiApiKey, setAiApiKey] = useState("");
+  const [aiBaseUrl, setAiBaseUrl] = useState("");
+  const [aiTestMessage, setAiTestMessage] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     createChatMessage("assistant", "HWP 문서를 열고 원하는 수정 방향을 입력해 주세요. 수정 제안을 만든 뒤 비교 카드에서 확인하고 문서에 반영할 수 있습니다.", "chat-welcome"),
@@ -55,6 +68,12 @@ export default function HwpAiMvp() {
   const tableCellCount = useMemo(() => blocks.filter((block) => block.type === "tableCell").length, [blocks]);
   const paragraphCount = useMemo(() => blocks.filter((block) => block.type === "paragraph").length, [blocks]);
   const codexConnected = codexStatus?.authenticated || codexStatus?.source === "api-key";
+  const effectiveAiSettings = useMemo<AiSettings>(() => ({
+    provider: aiProvider,
+    apiKey: aiApiKey.trim() || undefined,
+    baseUrl: aiBaseUrl.trim() || undefined,
+    model: selectedModel,
+  }), [aiProvider, aiApiKey, aiBaseUrl, selectedModel]);
 
   const refreshCodexSettings = useCallback(async () => {
     try {
@@ -80,11 +99,22 @@ export default function HwpAiMvp() {
 
   useEffect(() => {
     refreshCodexSettings();
+    const savedProvider = window.localStorage.getItem("hwp-ai-provider") as AiProvider | null;
+    const savedApiKey = window.localStorage.getItem("hwp-ai-api-key");
+    const savedBaseUrl = window.localStorage.getItem("hwp-ai-base-url");
+    if (savedProvider && ["openai", "ollama", "mlx", "custom"].includes(savedProvider)) setAiProvider(savedProvider);
+    if (savedApiKey) setAiApiKey(savedApiKey);
+    if (savedBaseUrl) setAiBaseUrl(savedBaseUrl);
   }, [refreshCodexSettings]);
 
   useEffect(() => {
     window.localStorage.setItem("hwp-ai-model", selectedModel);
-  }, [selectedModel]);
+    window.localStorage.setItem("hwp-ai-provider", aiProvider);
+    if (aiApiKey.trim()) window.localStorage.setItem("hwp-ai-api-key", aiApiKey.trim());
+    else window.localStorage.removeItem("hwp-ai-api-key");
+    if (aiBaseUrl.trim()) window.localStorage.setItem("hwp-ai-base-url", aiBaseUrl.trim());
+    else window.localStorage.removeItem("hwp-ai-base-url");
+  }, [selectedModel, aiProvider, aiApiKey, aiBaseUrl]);
 
   const requestRhwp = useCallback(<T,>(method: string, params: Record<string, unknown> = {}) => {
     return new Promise<T>((resolve, reject) => {
@@ -173,6 +203,25 @@ export default function HwpAiMvp() {
     }
   }
 
+  async function testAiSettings() {
+    setAiTestMessage("연결을 확인하는 중입니다...");
+    try {
+      const response = await fetch("/api/ai/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiSettings: effectiveAiSettings }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "연결 테스트에 실패했습니다");
+      setAiTestMessage(data.message || "연결에 성공했습니다.");
+      setStatus(data.message || "인공지능 연결에 성공했습니다.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAiTestMessage(message);
+      setStatus(message);
+    }
+  }
+
   async function createAiSuggestion() {
     const prompt = instruction.trim();
     if (!prompt) {
@@ -187,7 +236,7 @@ export default function HwpAiMvp() {
       const response = await fetch("/api/ai/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruction: prompt, blocks: currentBlocks, model: selectedModel }),
+        body: JSON.stringify({ instruction: prompt, blocks: currentBlocks, model: selectedModel, aiSettings: effectiveAiSettings }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "AI 수정에 실패했습니다");
@@ -321,16 +370,45 @@ export default function HwpAiMvp() {
           {settingsOpen && (
             <div className="inlineSettings">
               <div>
-                <span className={codexConnected ? "statusDot good" : "statusDot warn"} />
-                {codexStatus?.message ?? "코덱스 설정을 확인하는 중입니다."}
+                <span className={codexConnected || aiApiKey || aiProvider !== "openai" ? "statusDot good" : "statusDot warn"} />
+                {aiTestMessage || codexStatus?.message || "인공지능 설정을 확인하는 중입니다."}
               </div>
               <label>
-                모델
-                <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
-                  {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                제공자
+                <select value={aiProvider} onChange={(event) => setAiProvider(event.target.value as AiProvider)}>
+                  <option value="openai">OpenAI API</option>
+                  <option value="ollama">로컬 Ollama</option>
+                  <option value="mlx">로컬 MLX 서버</option>
+                  <option value="custom">직접 입력 서버</option>
                 </select>
               </label>
-              <button className="secondaryButton" type="button" onClick={refreshCodexSettings}>상태 새로고침</button>
+              <label>
+                모델
+                {aiProvider === "openai" ? (
+                  <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
+                    {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                  </select>
+                ) : (
+                  <input value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)} placeholder="모델명을 입력하세요" />
+                )}
+              </label>
+              {aiProvider !== "openai" && (
+                <label>
+                  서버 주소
+                  <input value={aiBaseUrl} onChange={(event) => setAiBaseUrl(event.target.value)} placeholder={aiProvider === "ollama" ? "http://localhost:11434" : "http://localhost:8080"} />
+                </label>
+              )}
+              {(aiProvider === "openai" || aiProvider === "custom") && (
+                <label>
+                  API 키
+                  <input type="password" value={aiApiKey} onChange={(event) => setAiApiKey(event.target.value)} placeholder="브라우저에 저장됩니다" />
+                </label>
+              )}
+              <div className="settingsActions">
+                <button className="secondaryButton" type="button" onClick={testAiSettings}>연결 테스트</button>
+                <button className="secondaryButton" type="button" onClick={refreshCodexSettings}>상태 새로고침</button>
+              </div>
+              <p className="settingsHint">입력한 값은 이 브라우저에만 저장되며, 문서 수정 요청과 연결 테스트 때만 서버로 전달됩니다.</p>
             </div>
           )}
 

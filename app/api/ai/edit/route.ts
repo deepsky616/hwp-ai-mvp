@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requestDocumentPatches } from "../../../../lib/ai-edit";
+import { requestDocumentPatches, type AiSettings } from "../../../../lib/ai-edit";
 import type { DocumentBlock } from "../../../../lib/document";
 
 type RequestBody = {
   instruction?: string;
   blocks?: DocumentBlock[];
   model?: string;
+  aiSettings?: AiSettings;
 };
 
 export async function POST(request: NextRequest) {
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "추출된 문서 내용이 없습니다" }, { status: 400 });
     }
 
-    const patches = await requestDocumentPatches({ instruction, blocks, model: body.model });
+    const patches = await requestDocumentPatches({ instruction, blocks, model: body.model, aiSettings: body.aiSettings });
     return NextResponse.json({ patches });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
