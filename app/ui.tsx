@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { blocksToHtml, blocksToMarkdown, type DocumentBlock, type DocumentPatch } from "../lib/document";
 import { shouldUseTextImportFallback } from "../lib/hwp-load";
 
@@ -9,6 +9,14 @@ type RhwpResponse<T> = {
   id?: string;
   result?: T;
   error?: string;
+};
+
+type CodexStatus = {
+  authenticated: boolean;
+  source: "codex-oauth" | "api-key" | "missing";
+  authFile: string;
+  accountId?: string;
+  message: string;
 };
 
 function downloadBytes(fileName: string, bytes: Uint8Array, mime: string) {
@@ -33,9 +41,44 @@ export default function HwpAiMvp() {
   const [instruction, setInstruction] = useState("공문 문체로 자연스럽게 다듬고 오탈자를 수정해 주세요.");
   const [blocks, setBlocks] = useState<DocumentBlock[]>([]);
   const [isBusy, setIsBusy] = useState(false);
+  const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
+  const [models, setModels] = useState<string[]>(["gpt-4.1-mini"]);
+  const [selectedModel, setSelectedModel] = useState("gpt-4.1-mini");
+  const [settingsOpen, setSettingsOpen] = useState(true);
 
   const tableCellCount = useMemo(() => blocks.filter((block) => block.type === "tableCell").length, [blocks]);
   const paragraphCount = useMemo(() => blocks.filter((block) => block.type === "paragraph").length, [blocks]);
+  const codexConnected = codexStatus?.authenticated || codexStatus?.source === "api-key";
+
+  const refreshCodexSettings = useCallback(async () => {
+    try {
+      const statusResponse = await fetch("/api/codex/status");
+      const statusData = (await statusResponse.json()) as CodexStatus;
+      setCodexStatus(statusData);
+
+      const modelsResponse = await fetch("/api/codex/models");
+      const modelsData = (await modelsResponse.json()) as { models?: string[] };
+      const nextModels = modelsData.models?.length ? modelsData.models : ["gpt-4.1-mini"];
+      setModels(nextModels);
+      const savedModel = window.localStorage.getItem("hwp-ai-model");
+      setSelectedModel(savedModel && nextModels.includes(savedModel) ? savedModel : nextModels[0]);
+    } catch (error) {
+      setCodexStatus({
+        authenticated: false,
+        source: "missing",
+        authFile: "~/.codex/auth.json",
+        message: error instanceof Error ? error.message : "코덱스 설정을 불러오지 못했습니다.",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCodexSettings();
+  }, [refreshCodexSettings]);
+
+  useEffect(() => {
+    window.localStorage.setItem("hwp-ai-model", selectedModel);
+  }, [selectedModel]);
 
   const requestRhwp = useCallback(<T,>(method: string, params: Record<string, unknown> = {}) => {
     return new Promise<T>((resolve, reject) => {
@@ -125,7 +168,7 @@ export default function HwpAiMvp() {
       const response = await fetch("/api/ai/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruction, blocks: currentBlocks }),
+        body: JSON.stringify({ instruction, blocks: currentBlocks, model: selectedModel }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "AI 수정에 실패했습니다");
@@ -206,7 +249,34 @@ export default function HwpAiMvp() {
         <button disabled={isBusy} onClick={exportHwpx}>HWPX 저장</button>
         <button disabled={isBusy} onClick={exportMarkdown}>마크다운 저장</button>
         <button disabled={isBusy} onClick={exportHtml}>HTML 저장</button>
+        <button className="secondaryButton" disabled={isBusy} onClick={() => setSettingsOpen((value) => !value)}>
+          인공지능 설정
+        </button>
       </section>
+
+      {settingsOpen && (
+        <section className="settingsCard">
+          <div>
+            <strong>코덱스 로그인</strong>
+            <p>{codexStatus?.message ?? "코덱스 설정을 확인하는 중입니다."}</p>
+            <code>{codexStatus?.authFile ?? "~/.codex/auth.json"}</code>
+          </div>
+          <div className="settingsActions">
+            <label>
+              사용할 모델
+              <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
+                {models.map((model) => <option key={model} value={model}>{model}</option>)}
+              </select>
+            </label>
+            <button className="secondaryButton" type="button" onClick={refreshCodexSettings}>상태 새로고침</button>
+          </div>
+          <p className={codexConnected ? "goodNotice" : "warnNotice"}>
+            {codexConnected
+              ? `선택한 ${selectedModel} 모델로 HWP 내용을 수정합니다.`
+              : "터미널에서 codex login 명령을 실행한 뒤 상태 새로고침을 눌러 주세요."}
+          </p>
+        </section>
+      )}
 
       <section className="panelGrid">
         <div className="card editorCard">
