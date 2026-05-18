@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { blocksToHtml, blocksToMarkdown, type DocumentBlock, type DocumentPatch } from "../lib/document";
+import { shouldUseTextImportFallback } from "../lib/hwp-load";
 
 type RhwpResponse<T> = {
   type?: string;
@@ -74,7 +75,28 @@ export default function HwpAiMvp() {
       setBlocks([]);
       setStatus(`문서를 열었습니다. 쪽 수: ${result.pageCount}`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      if (!shouldUseTextImportFallback(error)) {
+        setStatus(error instanceof Error ? error.message : String(error));
+        setIsBusy(false);
+        return;
+      }
+
+      try {
+        setStatus("문서 메타데이터 오류가 감지되어 텍스트 복구 열기를 시도합니다.");
+        const form = new FormData();
+        form.append("file", file);
+        const response = await fetch("/api/hwp/recover", { method: "POST", body: form });
+        const recovered = await response.json();
+        if (!response.ok) throw new Error(recovered.error || "텍스트 복구 열기에 실패했습니다");
+        const created = await requestRhwp<{ pageCount: number }>("createNewDocument");
+        await requestRhwp("pasteHtml", { sectionIndex: 0, paragraphIndex: 0, charOffset: 0, html: recovered.html });
+        const refreshed = await requestRhwp<DocumentBlock[]>("extractTextBlocks");
+        setFileName(file.name.replace(/\.[^.]+$/, "") + "-recovered.hwp");
+        setBlocks(refreshed);
+        setStatus(`원본 HWP 메타데이터 오류 때문에 텍스트 복구 방식으로 열었습니다. 새 문서 쪽 수: ${created.pageCount}`);
+      } catch (recoverError) {
+        setStatus(recoverError instanceof Error ? recoverError.message : String(recoverError));
+      }
     } finally {
       setIsBusy(false);
     }
