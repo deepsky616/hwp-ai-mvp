@@ -266,9 +266,9 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
   if (provider === "openai-oauth") {
     const authorization = getOpenAiAuthorization();
     if (authorization?.source !== "codex-oauth") {
-      throw new Error("오픈에이아이 오어스 로그인이 필요합니다. 먼저 코덱스 로그인을 연결해 주세요.");
+      throw new Error("OpenAI 계정 로그인이 필요합니다. 먼저 인공지능 설정에서 OpenAI 계정 로그인을 연결해 주세요.");
     }
-    return { ok: true, message: "오픈에이아이 오어스 로그인이 연결되어 있습니다." };
+    return { ok: true, message: "OpenAI 계정 로그인이 연결되어 있습니다." };
   }
 
   if (provider === "ollama") {
@@ -296,7 +296,7 @@ export async function requestDocumentPatches(request: AiEditRequest): Promise<Do
   if (provider === "openai-oauth") {
     const authorization = getOpenAiAuthorization();
     if (authorization?.source !== "codex-oauth") {
-      throw new Error("오픈에이아이 오어스 로그인이 필요합니다. 먼저 코덱스 로그인을 연결해 주세요.");
+      throw new Error("OpenAI 계정 로그인이 필요합니다. 먼저 인공지능 설정에서 OpenAI 계정 로그인을 연결해 주세요.");
     }
     return requestPatchesWithCodexCli({ ...request, model: resolveRequestModel(request) });
   }

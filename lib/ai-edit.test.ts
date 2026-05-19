@@ -30,7 +30,7 @@ describe("인공지능 문서 수정", () => {
     expect(extractResponseText({ output: [{ content: [{ text: "본문" }] }] })).toBe("본문");
   });
 
-  it("코덱스 오어스 인증과 선택 모델로 문서 패치를 요청합니다", async () => {
+  it("코덱스 계정 인증과 선택 모델로 문서 패치를 요청합니다", async () => {
     process.env.CODEX_AUTH_FILE = "/tmp/없는-파일.json";
     process.env.OPENAI_API_KEY = "sk-test";
     const fetchMock = vi.fn().mockResolvedValue({
@@ -49,7 +49,7 @@ describe("인공지능 문서 수정", () => {
     expect(requestBody.model).toBe("gpt-4.1-mini");
   });
 
-  it("웹앱 설정에서 입력한 오픈에이아이 키를 서버 환경 변수보다 우선 사용합니다", async () => {
+  it("웹앱 설정에서 입력한 OpenAI 키를 서버 환경 변수보다 우선 사용합니다", async () => {
     process.env.CODEX_AUTH_FILE = "/tmp/없는-파일.json";
     process.env.OPENAI_API_KEY = "sk-server";
     const fetchMock = vi.fn().mockResolvedValue({
@@ -105,7 +105,7 @@ describe("인공지능 문서 수정", () => {
     }));
   });
 
-  it("오픈에이아이 오어스 연결 테스트는 코덱스 로그인 파일을 사용하고 네트워크에 키를 보내지 않습니다", async () => {
+  it("OpenAI 계정 연결 테스트는 OpenAI 계정 로그인 파일을 사용하고 네트워크에 키를 보내지 않습니다", async () => {
     const dir = await mkdtemp(join(tmpdir(), "hwp-ai-auth-"));
     const authFile = join(dir, "auth.json");
     try {
@@ -117,7 +117,7 @@ describe("인공지능 문서 수정", () => {
 
       await expect(testAiConnection({ provider: "openai-oauth", model: "gpt-5.5" })).resolves.toMatchObject({
         ok: true,
-        message: "오픈에이아이 오어스 로그인이 연결되어 있습니다.",
+        message: "OpenAI 계정 로그인이 연결되어 있습니다.",
       });
 
       expect(fetchMock).not.toHaveBeenCalled();
@@ -126,15 +126,15 @@ describe("인공지능 문서 수정", () => {
     }
   });
 
-  it("오픈에이아이 오어스 선택 시 로그인 파일이 없으면 안내 오류를 반환합니다", async () => {
-    process.env.CODEX_AUTH_FILE = "/tmp/없는-오어스-파일.json";
+  it("OpenAI 계정 선택 시 로그인 파일이 없으면 안내 오류를 반환합니다", async () => {
+    process.env.CODEX_AUTH_FILE = "/tmp/없는-계정-파일.json";
     delete process.env.OPENAI_API_KEY;
 
-    await expect(testAiConnection({ provider: "openai-oauth", model: "gpt-5.5" })).rejects.toThrow("오픈에이아이 오어스 로그인이 필요합니다");
+    await expect(testAiConnection({ provider: "openai-oauth", model: "gpt-5.5" })).rejects.toThrow("OpenAI 계정 로그인이 필요합니다");
     await expect(requestDocumentPatches({
       instruction: "띄어쓰기 수정",
       blocks,
       aiSettings: { provider: "openai-oauth", model: "gpt-5.5" },
-    })).rejects.toThrow("오픈에이아이 오어스 로그인이 필요합니다");
+    })).rejects.toThrow("OpenAI 계정 로그인이 필요합니다");
   });
 });

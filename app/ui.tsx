@@ -95,7 +95,7 @@ export default function HwpAiMvp() {
         authenticated: false,
         source: "missing",
         authFile: "~/.codex/auth.json",
-        message: error instanceof Error ? error.message : "코덱스 설정을 불러오지 못했습니다.",
+        message: error instanceof Error ? error.message : "OpenAI 계정 설정을 불러오지 못했습니다.",
       });
     }
   }, []);
@@ -227,17 +227,17 @@ export default function HwpAiMvp() {
 
   async function startOpenAiOauthLogin() {
     setAiProvider("openai-oauth");
-    setAiTestMessage("오어스 로그인 코드를 만드는 중입니다...");
+    setAiTestMessage("OpenAI 계정 로그인 코드를 만드는 중입니다...");
     setOauthLoginCode("");
     setOauthLoginUrl("");
     try {
       const response = await fetch("/api/codex/login/start", { method: "POST" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "오어스 로그인을 시작하지 못했습니다");
+      if (!response.ok) throw new Error(data.error || "OpenAI 계정 로그인을 시작하지 못했습니다");
       setOauthLoginCode(data.code || "");
       setOauthLoginUrl(data.loginUrl || "");
-      setAiTestMessage(data.message || "오어스 로그인 창에서 코드를 입력해 주세요.");
-      setStatus(`오어스 로그인 코드: ${data.code}. 로그인 후 상태 새로고침을 눌러 주세요.`);
+      setAiTestMessage(data.message || "OpenAI 계정 로그인 창에서 코드를 입력해 주세요.");
+      setStatus(`OpenAI 계정 로그인 코드: ${data.code}. 로그인 후 상태 새로고침을 눌러 주세요.`);
       if (data.loginUrl) window.open(data.loginUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -401,7 +401,7 @@ export default function HwpAiMvp() {
                 제공자
                 <select value={aiProvider} onChange={(event) => setAiProvider(event.target.value as AiProvider)}>
                   <option value="openai">OpenAI API 키</option>
-                  <option value="openai-oauth">OpenAI 오어스 로그인</option>
+                  <option value="openai-oauth">OpenAI 계정 로그인</option>
                   <option value="ollama">로컬 Ollama</option>
                   <option value="mlx">로컬 MLX 서버</option>
                   <option value="custom">직접 입력 서버</option>
@@ -425,8 +425,8 @@ export default function HwpAiMvp() {
               )}
               {openAiOauthSelected && (
                 <div className="oauthLoginBox">
-                  <p className="settingsHint">이 선택은 서버의 코덱스 로그인 파일을 사용합니다. API 키를 브라우저에 저장하지 않고 연결 테스트와 문서 수정 요청을 처리합니다.</p>
-                  <button className="secondaryButton" type="button" onClick={startOpenAiOauthLogin}>오픈에이아이 로그인하기</button>
+                  <p className="settingsHint">이 선택은 서버의 OpenAI 계정 로그인 파일을 사용합니다. API 키를 브라우저에 저장하지 않고 연결 테스트와 문서 수정 요청을 처리합니다.</p>
+                  <button className="secondaryButton" type="button" onClick={startOpenAiOauthLogin}>OpenAI 계정 로그인하기</button>
                   {oauthLoginCode && (
                     <p className="settingsHint">열린 로그인 창에서 코드 <strong>{oauthLoginCode}</strong>를 입력해 주세요. 코드는 15분 동안 유효합니다.</p>
                   )}
