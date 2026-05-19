@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildPatchPreviewCards, createChatMessage, summarizePatchResult, type ChatMessage, type PatchPreviewCard } from "../lib/chat-panel";
 import { blocksToHtml, blocksToMarkdown, type DocumentBlock, type DocumentPatch } from "../lib/document";
 import { shouldUseTextImportFallback } from "../lib/hwp-load";
+import { startBrowserOpenAiAccountLogin, type OpenAiLoginStartResult } from "../lib/openai-login-popup";
 
 type RhwpResponse<T> = {
   type?: string;
@@ -231,14 +232,20 @@ export default function HwpAiMvp() {
     setOauthLoginCode("");
     setOauthLoginUrl("");
     try {
-      const response = await fetch("/api/codex/login/start", { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "OpenAI 계정 로그인을 시작하지 못했습니다");
-      setOauthLoginCode(data.code || "");
-      setOauthLoginUrl(data.loginUrl || "");
-      setAiTestMessage(data.message || "OpenAI 계정 로그인 창에서 코드를 입력해 주세요.");
-      setStatus(`OpenAI 계정 로그인 코드: ${data.code}. 로그인 후 상태 새로고침을 눌러 주세요.`);
-      if (data.loginUrl) window.open(data.loginUrl, "_blank", "noopener,noreferrer");
+      const result = await startBrowserOpenAiAccountLogin({
+        openWindow: (url, target, features) => window.open(url, target, features),
+        requestLoginStart: async (): Promise<OpenAiLoginStartResult> => {
+          const response = await fetch("/api/codex/login/start", { method: "POST" });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "OpenAI 계정 로그인을 시작하지 못했습니다");
+          return data as OpenAiLoginStartResult;
+        },
+      });
+      setOauthLoginCode(result.data.code || "");
+      setOauthLoginUrl(result.data.loginUrl || "");
+      const popupNotice = result.popupBlocked ? " 팝업이 차단되면 아래 로그인 창 다시 열기를 눌러 주세요." : "";
+      setAiTestMessage((result.data.message || "OpenAI 계정 로그인 창에서 코드를 입력해 주세요.") + popupNotice);
+      setStatus(`OpenAI 계정 로그인 코드: ${result.data.code}. 로그인 후 상태 새로고침을 눌러 주세요.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setAiTestMessage(message);

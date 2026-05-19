@@ -27,6 +27,30 @@ npm run dev
 http://localhost:3000
 ```
 
+## 윈도우 데스크톱 실행
+
+윈도우에서는 터미널에서 매번 웹 서버를 따로 띄우지 않도록 Electron 데스크톱 껍데기를 사용할 수 있습니다.
+
+```bash
+npm install
+npm run desktop:dev
+```
+
+위 명령은 데스크톱 창을 열고 내부에서 로컬 Next 서버를 자동으로 시작합니다. 이 방식은 윈도우에서도 로컬 Codex CLI와 같은 명령줄 도구를 서버 API에서 실행할 수 있게 해 줍니다.
+
+이미 다른 주소에서 서버를 실행 중이면 아래처럼 외부 주소를 지정할 수 있습니다.
+
+```bash
+HWP_AI_DESKTOP_URL=http://localhost:3000 npm run desktop:dev
+```
+
+윈도우 설치 파일 실험 빌드는 다음 명령으로 시작합니다.
+
+```bash
+npm run build
+npm run desktop:win
+```
+
 ## AI 수정 설정
 
 AI 수정 버튼을 사용하려면 환경 변수를 설정합니다.

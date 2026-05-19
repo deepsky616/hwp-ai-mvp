@@ -3,13 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "desktop/electron/main.cjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "desktop:dev": "electron desktop/electron/main.cjs",
+    "desktop:win": "electron-builder --win nsis portable"
   },
   "dependencies": {
     "@types/node": "^20.17.10",
@@ -22,5 +25,30 @@
     "react-dom": "^19.0.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "kr.hwpai.editor",
+    "productName": "HWP AI 편집기",
+    "files": [
+      ".next/**/*",
+      "app/**/*",
+      "desktop/**/*",
+      "lib/**/*",
+      "public/**/*",
+      "scripts/**/*",
+      "next.config.ts",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    }
   }
 }
