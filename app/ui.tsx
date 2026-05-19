@@ -421,8 +421,11 @@ export default function HwpAiMvp() {
           <div className="chatStream" aria-label="문서 편집 대화 내용">
             {chatMessages.map((message) => (
               <div key={message.id} className={`chatBubble ${message.role}`}>
-                <span>{message.role === "user" ? "영석님" : message.role === "assistant" ? "도우미" : "문서 상태"}</span>
-                <p>{message.text}</p>
+                <span className="chatAvatar">{message.role === "user" ? "나" : message.role === "assistant" ? "AI" : "상태"}</span>
+                <div className="chatMessageBody">
+                  <span className="chatRoleLabel">{message.role === "user" ? "영석님" : message.role === "assistant" ? "문서 도우미" : "문서 상태"}</span>
+                  <p>{message.text}</p>
+                </div>
               </div>
             ))}
           </div>
