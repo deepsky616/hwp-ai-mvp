@@ -20,7 +20,7 @@ type CodexStatus = {
   message: string;
 };
 
-type AiProvider = "openai" | "ollama" | "mlx" | "custom";
+type AiProvider = "openai" | "openai-oauth" | "ollama" | "mlx" | "custom";
 
 type AiSettings = {
   provider: AiProvider;
@@ -68,6 +68,7 @@ export default function HwpAiMvp() {
   const tableCellCount = useMemo(() => blocks.filter((block) => block.type === "tableCell").length, [blocks]);
   const paragraphCount = useMemo(() => blocks.filter((block) => block.type === "paragraph").length, [blocks]);
   const codexConnected = codexStatus?.authenticated || codexStatus?.source === "api-key";
+  const openAiOauthSelected = aiProvider === "openai-oauth";
   const effectiveAiSettings = useMemo<AiSettings>(() => ({
     provider: aiProvider,
     apiKey: aiApiKey.trim() || undefined,
@@ -102,7 +103,7 @@ export default function HwpAiMvp() {
     const savedProvider = window.localStorage.getItem("hwp-ai-provider") as AiProvider | null;
     const savedApiKey = window.localStorage.getItem("hwp-ai-api-key");
     const savedBaseUrl = window.localStorage.getItem("hwp-ai-base-url");
-    if (savedProvider && ["openai", "ollama", "mlx", "custom"].includes(savedProvider)) setAiProvider(savedProvider);
+    if (savedProvider && ["openai", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)) setAiProvider(savedProvider);
     if (savedApiKey) setAiApiKey(savedApiKey);
     if (savedBaseUrl) setAiBaseUrl(savedBaseUrl);
   }, [refreshCodexSettings]);
@@ -370,13 +371,14 @@ export default function HwpAiMvp() {
           {settingsOpen && (
             <div className="inlineSettings">
               <div>
-                <span className={codexConnected || aiApiKey || aiProvider !== "openai" ? "statusDot good" : "statusDot warn"} />
+                <span className={(openAiOauthSelected ? codexStatus?.authenticated : codexConnected || aiApiKey || aiProvider !== "openai") ? "statusDot good" : "statusDot warn"} />
                 {aiTestMessage || codexStatus?.message || "인공지능 설정을 확인하는 중입니다."}
               </div>
               <label>
                 제공자
                 <select value={aiProvider} onChange={(event) => setAiProvider(event.target.value as AiProvider)}>
-                  <option value="openai">OpenAI API</option>
+                  <option value="openai">OpenAI API 키</option>
+                  <option value="openai-oauth">OpenAI 오어스 로그인</option>
                   <option value="ollama">로컬 Ollama</option>
                   <option value="mlx">로컬 MLX 서버</option>
                   <option value="custom">직접 입력 서버</option>
@@ -384,7 +386,7 @@ export default function HwpAiMvp() {
               </label>
               <label>
                 모델
-                {aiProvider === "openai" ? (
+                {aiProvider === "openai" || aiProvider === "openai-oauth" ? (
                   <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
                     {models.map((model) => <option key={model} value={model}>{model}</option>)}
                   </select>
@@ -397,6 +399,9 @@ export default function HwpAiMvp() {
                   서버 주소
                   <input value={aiBaseUrl} onChange={(event) => setAiBaseUrl(event.target.value)} placeholder={aiProvider === "ollama" ? "http://localhost:11434" : "http://localhost:8080"} />
                 </label>
+              )}
+              {openAiOauthSelected && (
+                <p className="settingsHint">이 선택은 서버의 코덱스 로그인 파일을 사용합니다. API 키를 브라우저에 저장하지 않고 연결 테스트와 문서 수정 요청을 처리합니다.</p>
               )}
               {(aiProvider === "openai" || aiProvider === "custom") && (
                 <label>

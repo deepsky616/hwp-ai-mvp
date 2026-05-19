@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildAiEditPayload, extractResponseText, requestDocumentPatches, testAiConnection } from "./ai-edit";
 import type { DocumentBlock } from "./document";
@@ -100,5 +103,38 @@ describe("인공지능 문서 수정", () => {
     expect(fetchMock).toHaveBeenCalledWith("https://api.openai.com/v1/models", expect.objectContaining({
       headers: expect.objectContaining({ Authorization: "Bearer sk-browser" }),
     }));
+  });
+
+  it("오픈에이아이 오어스 연결 테스트는 코덱스 로그인 파일을 사용하고 네트워크에 키를 보내지 않습니다", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "hwp-ai-auth-"));
+    const authFile = join(dir, "auth.json");
+    try {
+      await writeFile(authFile, JSON.stringify({ tokens: { access_token: "oauth-token", account_id: "acct-test" } }), "utf8");
+      process.env.CODEX_AUTH_FILE = authFile;
+      delete process.env.OPENAI_API_KEY;
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(testAiConnection({ provider: "openai-oauth", model: "gpt-5.5" })).resolves.toMatchObject({
+        ok: true,
+        message: "오픈에이아이 오어스 로그인이 연결되어 있습니다.",
+      });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("오픈에이아이 오어스 선택 시 로그인 파일이 없으면 안내 오류를 반환합니다", async () => {
+    process.env.CODEX_AUTH_FILE = "/tmp/없는-오어스-파일.json";
+    delete process.env.OPENAI_API_KEY;
+
+    await expect(testAiConnection({ provider: "openai-oauth", model: "gpt-5.5" })).rejects.toThrow("오픈에이아이 오어스 로그인이 필요합니다");
+    await expect(requestDocumentPatches({
+      instruction: "띄어쓰기 수정",
+      blocks,
+      aiSettings: { provider: "openai-oauth", model: "gpt-5.5" },
+    })).rejects.toThrow("오픈에이아이 오어스 로그인이 필요합니다");
   });
 });

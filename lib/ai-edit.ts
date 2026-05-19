@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { getOpenAiAuthorization } from "./codex-auth";
 import type { DocumentBlock, DocumentPatch } from "./document";
 
-export type AiProvider = "openai" | "ollama" | "mlx" | "custom";
+export type AiProvider = "openai" | "openai-oauth" | "ollama" | "mlx" | "custom";
 
 export type AiSettings = {
   provider?: AiProvider;
@@ -263,6 +263,14 @@ async function requestPatchesWithOllama(request: AiEditRequest): Promise<Documen
 
 export async function testAiConnection(settings: AiSettings): Promise<{ ok: boolean; message: string }> {
   const provider = settings.provider || "openai";
+  if (provider === "openai-oauth") {
+    const authorization = getOpenAiAuthorization();
+    if (authorization?.source !== "codex-oauth") {
+      throw new Error("오픈에이아이 오어스 로그인이 필요합니다. 먼저 코덱스 로그인을 연결해 주세요.");
+    }
+    return { ok: true, message: "오픈에이아이 오어스 로그인이 연결되어 있습니다." };
+  }
+
   if (provider === "ollama") {
     const baseUrl = sanitizeBaseUrl(settings.baseUrl, "http://localhost:11434");
     const response = await fetch(`${baseUrl}/api/tags`);
@@ -285,6 +293,13 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
 
 export async function requestDocumentPatches(request: AiEditRequest): Promise<DocumentPatch[]> {
   const provider = request.aiSettings?.provider || "openai";
+  if (provider === "openai-oauth") {
+    const authorization = getOpenAiAuthorization();
+    if (authorization?.source !== "codex-oauth") {
+      throw new Error("오픈에이아이 오어스 로그인이 필요합니다. 먼저 코덱스 로그인을 연결해 주세요.");
+    }
+    return requestPatchesWithCodexCli({ ...request, model: resolveRequestModel(request) });
+  }
   if (provider === "ollama") return requestPatchesWithOllama(request);
   if (provider === "mlx" || provider === "custom") {
     const baseUrl = sanitizeBaseUrl(request.aiSettings?.baseUrl, "http://localhost:8080");
