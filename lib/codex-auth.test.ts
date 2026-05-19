@@ -1,8 +1,13 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCodexAuthStatus, getOpenAiAuthorization, listUsableModels, normalizeModelList } from "./codex-auth";
+import { getCodexAuthStatus, getOpenAiAuthorization, listUsableModels, normalizeModelList, startCodexDeviceLogin } from "./codex-auth";
+
+vi.mock("node:child_process", () => ({
+  execFile: vi.fn(),
+}));
 
 const originalEnv = { ...process.env };
 
@@ -62,5 +67,33 @@ describe("코덱스 인증", () => {
     expect(fetchMock).toHaveBeenCalledWith("https://api.openai.com/v1/models", expect.objectContaining({
       headers: expect.objectContaining({ Authorization: "Bearer sk-test" }),
     }));
+  });
+
+  it("코덱스 기기 인증 로그인 주소와 코드를 파싱합니다", async () => {
+    const output = [
+      "Follow these steps to sign in with ChatGPT using device code authorization:",
+      "https://auth.openai.com/codex/device",
+      "2. Enter this one-time code (expires in 15 minutes)",
+      "ABCD-EF123",
+    ].join("\n");
+    vi.mocked(execFile).mockImplementation((file, args, options, callback: any) => {
+      callback(null, output, "");
+      return {} as any;
+    });
+
+    await expect(startCodexDeviceLogin()).resolves.toMatchObject({
+      ok: true,
+      loginUrl: "https://auth.openai.com/codex/device",
+      code: "ABCD-EF123",
+      expiresInMinutes: 15,
+    });
+    expect(execFile).toHaveBeenCalledWith("codex", ["login", "--device-auth"], expect.objectContaining({ timeout: 30000 }), expect.any(Function));
+  });
+
+  it("배포 환경에서는 코덱스 기기 인증 시작을 막습니다", async () => {
+    process.env.VERCEL = "1";
+
+    await expect(startCodexDeviceLogin()).rejects.toThrow("로컬 실행 환경");
+    expect(execFile).not.toHaveBeenCalled();
   });
 });

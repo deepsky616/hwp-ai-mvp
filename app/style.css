@@ -55,6 +55,8 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
 .inlineSettings .settingsActions { align-items: stretch; }
 .inlineSettings .settingsActions button { flex: 1; padding: 10px 12px; }
 .settingsHint { margin: 0; line-height: 1.45; color: var(--muted); }
+.oauthLoginBox { display: grid; gap: 8px; padding: 10px; border: 1px solid #dbeafe; border-radius: 14px; background: #eff6ff; }
+.oauthLoginBox a { color: var(--accent); font-weight: 800; text-decoration: none; }
 .statusDot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 999px; }
 .statusDot.good { background: #10a37f; box-shadow: 0 0 0 4px rgba(16, 163, 127, .12); }
 .statusDot.warn { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, .12); }

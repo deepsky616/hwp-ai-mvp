@@ -58,6 +58,8 @@ export default function HwpAiMvp() {
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiBaseUrl, setAiBaseUrl] = useState("");
   const [aiTestMessage, setAiTestMessage] = useState("");
+  const [oauthLoginCode, setOauthLoginCode] = useState("");
+  const [oauthLoginUrl, setOauthLoginUrl] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     createChatMessage("assistant", "HWP 문서를 열고 원하는 수정 방향을 입력해 주세요. 수정 제안을 만든 뒤 비교 카드에서 확인하고 문서에 반영할 수 있습니다.", "chat-welcome"),
@@ -216,6 +218,27 @@ export default function HwpAiMvp() {
       if (!response.ok) throw new Error(data.error || "연결 테스트에 실패했습니다");
       setAiTestMessage(data.message || "연결에 성공했습니다.");
       setStatus(data.message || "인공지능 연결에 성공했습니다.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAiTestMessage(message);
+      setStatus(message);
+    }
+  }
+
+  async function startOpenAiOauthLogin() {
+    setAiProvider("openai-oauth");
+    setAiTestMessage("오어스 로그인 코드를 만드는 중입니다...");
+    setOauthLoginCode("");
+    setOauthLoginUrl("");
+    try {
+      const response = await fetch("/api/codex/login/start", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "오어스 로그인을 시작하지 못했습니다");
+      setOauthLoginCode(data.code || "");
+      setOauthLoginUrl(data.loginUrl || "");
+      setAiTestMessage(data.message || "오어스 로그인 창에서 코드를 입력해 주세요.");
+      setStatus(`오어스 로그인 코드: ${data.code}. 로그인 후 상태 새로고침을 눌러 주세요.`);
+      if (data.loginUrl) window.open(data.loginUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setAiTestMessage(message);
@@ -394,14 +417,23 @@ export default function HwpAiMvp() {
                   <input value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)} placeholder="모델명을 입력하세요" />
                 )}
               </label>
-              {aiProvider !== "openai" && (
+              {aiProvider !== "openai" && aiProvider !== "openai-oauth" && (
                 <label>
                   서버 주소
                   <input value={aiBaseUrl} onChange={(event) => setAiBaseUrl(event.target.value)} placeholder={aiProvider === "ollama" ? "http://localhost:11434" : "http://localhost:8080"} />
                 </label>
               )}
               {openAiOauthSelected && (
-                <p className="settingsHint">이 선택은 서버의 코덱스 로그인 파일을 사용합니다. API 키를 브라우저에 저장하지 않고 연결 테스트와 문서 수정 요청을 처리합니다.</p>
+                <div className="oauthLoginBox">
+                  <p className="settingsHint">이 선택은 서버의 코덱스 로그인 파일을 사용합니다. API 키를 브라우저에 저장하지 않고 연결 테스트와 문서 수정 요청을 처리합니다.</p>
+                  <button className="secondaryButton" type="button" onClick={startOpenAiOauthLogin}>오픈에이아이 로그인하기</button>
+                  {oauthLoginCode && (
+                    <p className="settingsHint">열린 로그인 창에서 코드 <strong>{oauthLoginCode}</strong>를 입력해 주세요. 코드는 15분 동안 유효합니다.</p>
+                  )}
+                  {oauthLoginUrl && (
+                    <a href={oauthLoginUrl} target="_blank" rel="noreferrer">로그인 창 다시 열기</a>
+                  )}
+                </div>
               )}
               {(aiProvider === "openai" || aiProvider === "custom") && (
                 <label>
