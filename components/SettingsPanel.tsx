@@ -45,8 +45,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
 function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardStep; setStep: (s: WizardStep) => void; completeSetup: () => void } & SettingsPanelProps) {
   return (
-    <div className="modalOverlay">
-      <div className="modalCard">
+    <div className="modalOverlay" onClick={props.onClose}>
+      <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+        <div className="modalHeader">
+          <span />
+          <button className="iconButton" onClick={props.onClose}>x</button>
+        </div>
         {step === "pick" && (
           <>
             <h2>OpenAI를 어떻게 사용하시나요?</h2>
