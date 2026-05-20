@@ -42,6 +42,20 @@ export type TableCellPatch = {
 
 export type DocumentPatch = ParagraphPatch | TableCellPatch;
 
+export function buildTableMatrix(cells: TableCellBlock[]): string[][] {
+  const cols = Math.max(1, ...cells.map((c) => c.cols ?? 1));
+  const rows = Math.max(1, ...cells.map((c) => c.rows ?? Math.ceil((c.cellIndex + 1) / cols)));
+  const matrix = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ""));
+  for (const cell of cells) {
+    const row = Math.floor(cell.cellIndex / cols);
+    const col = cell.cellIndex % cols;
+    if (row < rows && col < cols) {
+      matrix[row][col] = [matrix[row][col], cell.text.trim()].filter(Boolean).join(" ");
+    }
+  }
+  return matrix;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -81,17 +95,7 @@ export function blocksToMarkdown(blocks: DocumentBlock[]): string {
           item.controlIndex === block.controlIndex,
       );
 
-    const cols = Math.max(1, ...tableCells.map((item) => item.cols ?? 1));
-    const rows = Math.max(1, ...tableCells.map((item) => item.rows ?? Math.ceil((item.cellIndex + 1) / cols)));
-    const matrix = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ""));
-
-    for (const cell of tableCells) {
-      const row = Math.floor(cell.cellIndex / cols);
-      const col = cell.cellIndex % cols;
-      if (row < rows && col < cols) {
-        matrix[row][col] = [matrix[row][col], cell.text.trim()].filter(Boolean).join(" ");
-      }
-    }
+    const matrix = buildTableMatrix(tableCells);
 
     lines.push(`## 표 ${usedTableCells.size}`, "");
     lines.push(`| ${matrix[0].map(normalizeCell).join(" | ")} |`);
@@ -129,17 +133,7 @@ export function blocksToHtml(blocks: DocumentBlock[]): string {
           item.controlIndex === block.controlIndex,
       );
 
-    const cols = Math.max(1, ...tableCells.map((item) => item.cols ?? 1));
-    const rows = Math.max(1, ...tableCells.map((item) => item.rows ?? Math.ceil((item.cellIndex + 1) / cols)));
-    const matrix = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ""));
-
-    for (const cell of tableCells) {
-      const row = Math.floor(cell.cellIndex / cols);
-      const col = cell.cellIndex % cols;
-      if (row < rows && col < cols) {
-        matrix[row][col] = [matrix[row][col], cell.text.trim()].filter(Boolean).join(" ");
-      }
-    }
+    const matrix = buildTableMatrix(tableCells);
 
     body.push(
       `<table>${matrix

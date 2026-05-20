@@ -113,3 +113,54 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
   .settingsActions { align-items: stretch; flex-direction: column; }
   .editorCard iframe { height: 640px; min-height: 640px; }
 }
+
+/* 모달 오버레이 */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modalCard {
+  background: var(--surface, #fff);
+  border-radius: 12px;
+  padding: 28px 24px;
+  width: min(480px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 온보딩 마법사 */
+.wizardActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.oauthCode {
+  font-size: 1.1rem;
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+
+/* 에러 경계 폴백 */
+.errorFallback {
+  padding: 16px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
