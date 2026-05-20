@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "desktop:dev": "electron desktop/electron/main.cjs",
-    "desktop:win": "electron-builder --win nsis portable"
+    "desktop:win": "electron-builder --win nsis portable",
+    "desktop:mac": "electron-builder --mac dmg"
   },
   "dependencies": {
     "@types/node": "^20.17.10",
@@ -54,6 +55,10 @@
         "nsis",
         "portable"
       ]
+    },
+    "mac": {
+      "target": ["dmg"],
+      "identity": null
     }
   }
 }
