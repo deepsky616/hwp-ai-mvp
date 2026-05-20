@@ -174,7 +174,7 @@ export function useHwpEditor() {
   const clearPatches = useCallback(() => { setPendingPatches([]); setPreviewCards([]); }, []);
 
   function downloadBytes(name: string, bytes: Uint8Array, mime: string) {
-    const blob = new Blob([bytes.buffer], { type: mime });
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = name; a.click();
