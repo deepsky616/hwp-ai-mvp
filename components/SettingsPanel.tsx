@@ -85,7 +85,14 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
             )}
             <div className="wizardActions">
               <button className="secondaryButton" onClick={() => setStep("pick")}>뒤로</button>
-              <button onClick={async () => { await props.onRefresh(); completeSetup(); }}>로그인 완료 — 시작하기</button>
+              <button onClick={async () => {
+                await props.onRefresh();
+                if (props.codexStatus?.authenticated) {
+                  completeSetup();
+                } else {
+                  alert("로그인이 확인되지 않았습니다. 로그인 창에서 코드를 입력한 뒤 다시 시도해 주세요.");
+                }
+              }}>로그인 완료 — 시작하기</button>
             </div>
           </>
         )}

@@ -16,12 +16,10 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
-  try {
-    return await fetch(url, init);
-  } catch {
-    await new Promise((r) => setTimeout(r, 1000));
-    return fetch(url, init);
-  }
+  const res = await fetch(url, init);
+  if (res.ok || res.status < 500) return res;
+  await new Promise((r) => setTimeout(r, 1000));
+  return fetch(url, init);
 }
 
 export function useHwpEditor() {
