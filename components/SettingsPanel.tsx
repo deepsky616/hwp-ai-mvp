@@ -77,11 +77,15 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
             <h2>OpenAI 계정 로그인</h2>
             <p className="settingsHint">아래 버튼을 누르면 로그인 창이 열립니다. 창에 표시된 코드를 입력해 주세요.</p>
             <button onClick={props.onOauthLogin}>로그인 창 열기</button>
+            {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
             {props.oauthLoginCode && (
               <p className="oauthCode">코드: <strong>{props.oauthLoginCode}</strong></p>
             )}
             {props.oauthLoginUrl && (
-              <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">팝업이 막혔다면 여기를 클릭</a>
+              <p className="settingsHint">
+                팝업이 막혔다면 →{" "}
+                <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">로그인 창 직접 열기</a>
+              </p>
             )}
             <div className="wizardActions">
               <button className="secondaryButton" onClick={() => setStep("pick")}>뒤로</button>

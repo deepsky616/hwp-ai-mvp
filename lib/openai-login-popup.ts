@@ -20,13 +20,17 @@ type StartBrowserOpenAiAccountLoginOptions = {
 };
 
 const LOGIN_TARGET = "_blank";
-const LOGIN_FEATURES = "noopener,noreferrer";
+// noopener makes window.open() return null, preventing popup reservation.
+// The reserved window is redirected via location.href (no user-gesture needed),
+// so noopener is safe to omit for the initial about:blank open.
+const RESERVATION_FEATURES = "";
+const FALLBACK_FEATURES = "noopener,noreferrer";
 
 export async function startBrowserOpenAiAccountLogin({
   openWindow,
   requestLoginStart,
 }: StartBrowserOpenAiAccountLoginOptions): Promise<{ data: OpenAiLoginStartResult; popupBlocked: boolean }> {
-  const reservedWindow = openWindow("about:blank", LOGIN_TARGET, LOGIN_FEATURES);
+  const reservedWindow = openWindow("about:blank", LOGIN_TARGET, RESERVATION_FEATURES);
 
   try {
     const data = await requestLoginStart();
@@ -34,7 +38,7 @@ export async function startBrowserOpenAiAccountLogin({
       if (reservedWindow && !reservedWindow.closed) {
         reservedWindow.location.href = data.loginUrl;
       } else {
-        openWindow(data.loginUrl, LOGIN_TARGET, LOGIN_FEATURES);
+        openWindow(data.loginUrl, LOGIN_TARGET, FALLBACK_FEATURES);
       }
     }
 
