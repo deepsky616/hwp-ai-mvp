@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blocksToHtml, blocksToMarkdown, type DocumentBlock } from "./document";
+import { blocksToHtml, blocksToMarkdown, buildTableMatrix, type DocumentBlock, type TableCellBlock } from "./document";
 
 const blocks: DocumentBlock[] = [
   {
@@ -81,5 +81,17 @@ describe("문서 변환기", () => {
     expect(html).toContain("<p>안내문</p>");
     expect(html).toContain("<table>");
     expect(html).toContain("<td>오늘 오후</td>");
+  });
+});
+
+describe("buildTableMatrix", () => {
+  it("셀 목록으로 2×2 행렬을 만든다", () => {
+    const cells: TableCellBlock[] = [
+      { type: "tableCell", id: "a", sectionIndex: 0, parentParagraphIndex: 0, controlIndex: 0, cellIndex: 0, cellParagraphIndex: 0, length: 2, text: "A", rows: 2, cols: 2 },
+      { type: "tableCell", id: "b", sectionIndex: 0, parentParagraphIndex: 0, controlIndex: 0, cellIndex: 1, cellParagraphIndex: 0, length: 2, text: "B", rows: 2, cols: 2 },
+      { type: "tableCell", id: "c", sectionIndex: 0, parentParagraphIndex: 0, controlIndex: 0, cellIndex: 2, cellParagraphIndex: 0, length: 2, text: "C", rows: 2, cols: 2 },
+      { type: "tableCell", id: "d", sectionIndex: 0, parentParagraphIndex: 0, controlIndex: 0, cellIndex: 3, cellParagraphIndex: 0, length: 2, text: "D", rows: 2, cols: 2 },
+    ];
+    expect(buildTableMatrix(cells)).toEqual([["A", "B"], ["C", "D"]]);
   });
 });
