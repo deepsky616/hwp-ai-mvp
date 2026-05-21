@@ -56,9 +56,16 @@
         "portable"
       ]
     },
+    "nsis": {
+      "artifactName": "${productName}-${version}-windows-setup-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-windows-portable-${arch}.${ext}"
+    },
     "mac": {
       "target": ["dmg"],
-      "identity": null
+      "identity": null,
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
     }
   }
 }

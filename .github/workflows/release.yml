@@ -56,6 +56,9 @@ jobs:
       - name: Build Next.js
         run: npm run build
 
+      - name: Set app version from tag
+        run: node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.version = process.env.GITHUB_REF_NAME.replace(/^v/, ''); fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+
       - name: Build desktop app
         run: npx electron-builder ${{ matrix.eb_args }} --publish never
         env:
