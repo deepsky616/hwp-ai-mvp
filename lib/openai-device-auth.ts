@@ -35,7 +35,7 @@ export async function startDeviceAuth(): Promise<DeviceAuthStart> {
     throw new Error(`인증 코드 발급에 실패했습니다: ${text}`);
   }
 
-  const data = await res.json();
+  const data = (await res.json()) as { device_auth_id: string; user_code: string; interval: string };
   return {
     device_auth_id: data.device_auth_id,
     user_code: data.user_code,
@@ -61,7 +61,7 @@ export async function pollDeviceAuth(
   }
 
   if (res.ok) {
-    const data = await res.json();
+    const data = (await res.json()) as { authorization_code: string; code_verifier: string };
     return {
       status: "complete",
       authorization_code: data.authorization_code,
@@ -96,12 +96,7 @@ export async function exchangeCodeForTokens(
     throw new Error(`토큰 교환에 실패했습니다: ${text}`);
   }
 
-  const data = await res.json();
-  return {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    id_token: data.id_token,
-  };
+  return (await res.json()) as OAuthTokens;
 }
 
 export function saveAuthTokens(tokens: OAuthTokens): void {

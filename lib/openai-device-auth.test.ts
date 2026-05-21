@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { startDeviceAuth, pollDeviceAuth, exchangeCodeForTokens } from "./openai-device-auth";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { startDeviceAuth, pollDeviceAuth, exchangeCodeForTokens, saveAuthTokens } from "./openai-device-auth";
 
 const mockFetch = vi.fn();
 beforeEach(() => {
@@ -78,5 +81,20 @@ describe("exchangeCodeForTokens", () => {
   it("교환 실패 시 throw한다", async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, text: async () => "Bad request" });
     await expect(exchangeCodeForTokens("bad-code", "bad-verifier")).rejects.toThrow("토큰 교환에 실패했습니다");
+  });
+});
+
+describe("saveAuthTokens", () => {
+  it("토큰을 지정된 경로의 auth.json에 저장한다", () => {
+    const tmpFile = join(tmpdir(), `test-auth-${Date.now()}.json`);
+    process.env.CODEX_AUTH_FILE = tmpFile;
+    saveAuthTokens({ access_token: "at-1", refresh_token: "rt-1", id_token: "it-1" });
+    const saved = JSON.parse(readFileSync(tmpFile, "utf-8"));
+    expect(saved.auth_mode).toBe("ChatGpt");
+    expect(saved.tokens.access_token).toBe("at-1");
+    expect(saved.tokens.refresh_token).toBe("rt-1");
+    expect(saved.tokens.id_token).toBe("it-1");
+    expect(typeof saved.last_refresh).toBe("string");
+    delete process.env.CODEX_AUTH_FILE;
   });
 });
