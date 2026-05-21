@@ -2,7 +2,14 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCodexAuthStatus, getOpenAiAuthorization, listUsableModels, normalizeModelList, startCodexDeviceLogin } from "./codex-auth";
+import {
+  completeLoginWithAuthorizationCode,
+  getCodexAuthStatus,
+  getOpenAiAuthorization,
+  listUsableModels,
+  normalizeModelList,
+  startCodexDeviceLogin,
+} from "./codex-auth";
 
 vi.mock("./openai-device-auth", () => ({
   startDeviceAuth: vi.fn(),
@@ -112,5 +119,22 @@ describe("코덱스 인증", () => {
     process.env.VERCEL = "1";
 
     await expect(startCodexDeviceLogin()).rejects.toThrow("로컬 실행 환경");
+  });
+
+  it("콜백 authorization_code를 토큰으로 교환하고 저장합니다", async () => {
+    const { exchangeCodeForTokens, saveAuthTokens } = await import("./openai-device-auth");
+    const tokens = {
+      access_token: "access-token",
+      refresh_token: "refresh-token",
+      id_token: "id-token",
+    };
+    vi.mocked(exchangeCodeForTokens).mockResolvedValue(tokens);
+
+    await expect(completeLoginWithAuthorizationCode("auth-code", "verifier")).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(exchangeCodeForTokens).toHaveBeenCalledWith("auth-code", "verifier");
+    expect(saveAuthTokens).toHaveBeenCalledWith(tokens);
   });
 });

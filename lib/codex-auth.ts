@@ -145,6 +145,15 @@ export async function pollAndCompleteLogin(
   return { status: "complete" };
 }
 
+export async function completeLoginWithAuthorizationCode(
+  authorization_code: string,
+  code_verifier: string,
+): Promise<{ ok: true }> {
+  const tokens = await exchangeCodeForTokens(authorization_code, code_verifier);
+  saveAuthTokens(tokens);
+  return { ok: true };
+}
+
 export async function listUsableModels(): Promise<string[]> {
   const OPENAI_API_MODELS = ["gpt-4.1-mini", "gpt-4.1", "o4-mini", "o3-mini"];
   const authorization = getOpenAiAuthorization();
