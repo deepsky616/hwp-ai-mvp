@@ -88,6 +88,7 @@ export default function HwpAiMvp() {
           aiTestMessage={settings.aiTestMessage}
           oauthLoginCode={settings.oauthLoginCode}
           oauthLoginUrl={settings.oauthLoginUrl}
+          isPolling={settings.isPolling}
           onTest={settings.testAiSettings}
           onRefresh={settings.refreshCodexSettings}
           onOauthLogin={settings.startOpenAiOauthLogin}

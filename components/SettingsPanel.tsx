@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AiProvider, CodexStatus } from "../lib/useAiSettings";
 
 type SettingsPanelProps = {
@@ -16,6 +16,7 @@ type SettingsPanelProps = {
   aiTestMessage: string;
   oauthLoginCode: string;
   oauthLoginUrl: string;
+  isPolling: boolean;
   onTest: () => void;
   onRefresh: () => void;
   onOauthLogin: () => void;
@@ -44,6 +45,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
 }
 
 function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardStep; setStep: (s: WizardStep) => void; completeSetup: () => void } & SettingsPanelProps) {
+  useEffect(() => {
+    if (step === "oauth" && props.codexStatus?.authenticated) {
+      completeSetup();
+    }
+  }, [props.codexStatus?.authenticated, step]);
+
   return (
     <div className="modalOverlay" onClick={props.onClose}>
       <div className="modalCard" onClick={(e) => e.stopPropagation()}>
@@ -80,7 +87,9 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
           <>
             <h2>OpenAI 계정 로그인</h2>
             <p className="settingsHint">아래 버튼을 누르면 로그인 창이 열립니다. 창에 표시된 코드를 입력해 주세요.</p>
-            <button onClick={props.onOauthLogin}>로그인 창 열기</button>
+            <button onClick={props.onOauthLogin} disabled={props.isPolling}>
+              {props.isPolling ? "로그인 확인 중..." : "로그인 창 열기"}
+            </button>
             {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
             {props.oauthLoginCode && (
               <p className="oauthCode">코드: <strong>{props.oauthLoginCode}</strong></p>
