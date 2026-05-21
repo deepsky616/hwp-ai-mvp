@@ -77,8 +77,21 @@ describe("exchangeCodeForTokens", () => {
     expect(String(init.body)).toContain("code=auth-xyz");
     expect(String(init.body)).toContain("code_verifier=verifier-abc");
     expect(String(init.body)).toContain(
-      "redirect_uri=https%3A%2F%2Fauth.openai.com%2Fapi%2Faccounts%2Fdeviceauth%2Fcallback",
+      "redirect_uri=https%3A%2F%2Fauth.openai.com%2Fdeviceauth%2Fcallback",
     );
+  });
+
+  it("Codex CLI device auth와 같은 redirect_uri를 사용한다", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ access_token: "at-1", refresh_token: "rt-1", id_token: "it-1" }),
+    });
+
+    await exchangeCodeForTokens("auth-xyz", "verifier-abc");
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = new URLSearchParams(String(init.body));
+    expect(body.get("redirect_uri")).toBe("https://auth.openai.com/deviceauth/callback");
   });
 
   it("교환 실패 시 throw한다", async () => {
