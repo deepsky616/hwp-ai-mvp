@@ -105,6 +105,10 @@ export function useAiSettings() {
           setAiTestMessage("로그인이 완료되었습니다. 설정을 불러오는 중...");
           await refreshCodexSettings();
           setAiTestMessage("로그인이 완료되었습니다.");
+        } else if (data.status === "error") {
+          pollingRef.current = null;
+          setIsPolling(false);
+          setAiTestMessage(`로그인 확인 중 오류가 발생했습니다: ${data.error ?? "다시 시도해 주세요."}`);
         }
       } catch {
         // 일시적 네트워크 오류는 무시하고 계속 폴링
