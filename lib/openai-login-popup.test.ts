@@ -32,7 +32,7 @@ describe("OpenAI 계정 로그인 팝업", () => {
     const result = await startBrowserOpenAiAccountLogin({ openWindow, requestLoginStart });
 
     expect(events).toEqual(["open", "fetch"]);
-    expect(openWindow).toHaveBeenCalledWith("about:blank", "_blank", "noopener,noreferrer");
+    expect(openWindow).toHaveBeenCalledWith("about:blank", "_blank", "");
     expect(popup.location.href).toBe("https://auth.openai.com/codex/device");
     expect(result.popupBlocked).toBe(false);
     expect(result.data.code).toBe("ABCD-EF123");
@@ -51,7 +51,7 @@ describe("OpenAI 계정 로그인 팝업", () => {
 
     const result = await startBrowserOpenAiAccountLogin({ openWindow, requestLoginStart });
 
-    expect(openWindow).toHaveBeenNthCalledWith(1, "about:blank", "_blank", "noopener,noreferrer");
+    expect(openWindow).toHaveBeenNthCalledWith(1, "about:blank", "_blank", "");
     expect(openWindow).toHaveBeenNthCalledWith(2, "https://auth.openai.com/codex/device", "_blank", "noopener,noreferrer");
     expect(result.popupBlocked).toBe(true);
   });

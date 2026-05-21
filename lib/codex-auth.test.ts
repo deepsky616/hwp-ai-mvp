@@ -1,13 +1,14 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
-import { EventEmitter } from "node:events";
-import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getCodexAuthStatus, getOpenAiAuthorization, listUsableModels, normalizeModelList, startCodexDeviceLogin } from "./codex-auth";
 
-vi.mock("node:child_process", () => ({
-  spawn: vi.fn(),
+vi.mock("./openai-device-auth", () => ({
+  startDeviceAuth: vi.fn(),
+  pollDeviceAuth: vi.fn(),
+  exchangeCodeForTokens: vi.fn(),
+  saveAuthTokens: vi.fn(),
 }));
 
 const originalEnv = { ...process.env };
@@ -70,57 +71,46 @@ describe("코덱스 인증", () => {
     }));
   });
 
-  it("코덱스 기기 인증 로그인 주소와 코드를 파싱합니다", async () => {
-    const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; unref: () => void };
-    child.stdout = new EventEmitter();
-    child.stderr = new EventEmitter();
-    child.unref = vi.fn();
-    vi.mocked(spawn).mockReturnValue(child as any);
+  it("코덱스 기기 인증 로그인 주소와 코드를 HTTP API로 반환합니다", async () => {
+    const { startDeviceAuth } = await import("./openai-device-auth");
+    vi.mocked(startDeviceAuth).mockResolvedValue({
+      device_auth_id: "test-device-auth-id",
+      user_code: "ABCD-EF123",
+      interval: 5,
+    });
 
-    const loginPromise = startCodexDeviceLogin();
-    child.stdout.emit("data", Buffer.from([
-      "Follow these steps to sign in with ChatGPT using device code authorization:",
-      "https://auth.openai.com/codex/device",
-      "2. Enter this one-time code (expires in 15 minutes)",
-      "ABCD-EF123",
-    ].join("\n")));
+    const result = await startCodexDeviceLogin();
 
-    await expect(loginPromise).resolves.toMatchObject({
+    expect(result).toMatchObject({
       ok: true,
       loginUrl: "https://auth.openai.com/codex/device",
       code: "ABCD-EF123",
+      device_auth_id: "test-device-auth-id",
       expiresInMinutes: 15,
     });
-    expect(spawn).toHaveBeenCalledWith("codex", ["login", "--device-auth"], expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }));
+    expect(startDeviceAuth).toHaveBeenCalled();
   });
 
-  it("코덱스 기기 로그인 프로세스가 끝나기 전에도 코드가 나오면 즉시 반환합니다", async () => {
-    const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; unref: () => void };
-    child.stdout = new EventEmitter();
-    child.stderr = new EventEmitter();
-    child.unref = vi.fn();
-    vi.mocked(spawn).mockReturnValue(child as any);
+  it("코덱스 기기 로그인이 다른 코드를 반환해도 올바르게 전달됩니다", async () => {
+    const { startDeviceAuth } = await import("./openai-device-auth");
+    vi.mocked(startDeviceAuth).mockResolvedValue({
+      device_auth_id: "another-device-auth-id",
+      user_code: "WXYZ-12345",
+      interval: 5,
+    });
 
-    const loginPromise = startCodexDeviceLogin();
-    child.stdout.emit("data", Buffer.from([
-      "Follow these steps to sign in with ChatGPT using device code authorization:",
-      "https://auth.openai.com/codex/device",
-      "2. Enter this one-time code (expires in 15 minutes)",
-      "WXYZ-12345",
-    ].join("\n")));
+    const result = await startCodexDeviceLogin();
 
-    await expect(loginPromise).resolves.toMatchObject({
+    expect(result).toMatchObject({
       loginUrl: "https://auth.openai.com/codex/device",
       code: "WXYZ-12345",
+      device_auth_id: "another-device-auth-id",
     });
-    expect(spawn).toHaveBeenCalledWith("codex", ["login", "--device-auth"], expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }));
-    expect(child.unref).toHaveBeenCalled();
   });
 
   it("배포 환경에서는 코덱스 기기 인증 시작을 막습니다", async () => {
     process.env.VERCEL = "1";
 
     await expect(startCodexDeviceLogin()).rejects.toThrow("로컬 실행 환경");
-    expect(spawn).not.toHaveBeenCalled();
   });
 });
