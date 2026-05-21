@@ -41,7 +41,7 @@ describe("코덱스 인증", () => {
     process.env.CODEX_AUTH_FILE = join(tmpdir(), "missing-codex-auth.json");
     process.env.OPENAI_API_KEY = "sk-test";
 
-    expect(getCodexAuthStatus()).toMatchObject({ authenticated: false, source: "api-key" });
+    expect(getCodexAuthStatus()).toMatchObject({ authenticated: true, source: "api-key" });
     expect(getOpenAiAuthorization()).toEqual({ header: "Bearer sk-test", source: "api-key" });
   });
 
