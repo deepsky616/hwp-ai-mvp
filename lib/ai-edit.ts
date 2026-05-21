@@ -201,7 +201,7 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
       ? "https://api.openai.com"
       : sanitizeBaseUrl(
           settings.baseUrl,
-          provider === "mlx" ? "http://localhost:8080" : "http://localhost:8080",
+          "http://localhost:8080",
         );
   const headers: Record<string, string> = {};
   const key = settings.apiKey?.trim();

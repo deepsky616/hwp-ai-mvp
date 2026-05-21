@@ -67,7 +67,7 @@ export function getCodexAuthStatus(): CodexAuthStatus {
 
   if (process.env.OPENAI_API_KEY?.trim()) {
     return {
-      authenticated: false,
+      authenticated: true,
       source: "api-key",
       authFile,
       message: "OpenAI 계정 로그인은 없지만 서버 환경 변수 키가 연결되어 있습니다.",
