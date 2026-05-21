@@ -2,6 +2,7 @@ export type OpenAiLoginStartResult = {
   ok: true;
   loginUrl: string;
   code: string;
+  device_auth_id: string;
   expiresInMinutes: number;
   message: string;
 };

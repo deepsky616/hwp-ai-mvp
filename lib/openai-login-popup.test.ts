@@ -23,6 +23,7 @@ describe("OpenAI 계정 로그인 팝업", () => {
         ok: true,
         loginUrl: "https://auth.openai.com/codex/device",
         code: "ABCD-EF123",
+        device_auth_id: "test-device-auth-id",
         expiresInMinutes: 15,
         message: "OpenAI 계정 로그인 창에서 코드를 입력한 뒤 상태 새로고침을 눌러 주세요.",
       };
@@ -43,6 +44,7 @@ describe("OpenAI 계정 로그인 팝업", () => {
       ok: true,
       loginUrl: "https://auth.openai.com/codex/device",
       code: "WXYZ-12345",
+      device_auth_id: "test-device-auth-id-2",
       expiresInMinutes: 15,
       message: "OpenAI 계정 로그인 창에서 코드를 입력한 뒤 상태 새로고침을 눌러 주세요.",
     }));
