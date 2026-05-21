@@ -44,6 +44,51 @@ export function SettingsPanel(props: SettingsPanelProps) {
   return <SettingsModal {...props} />;
 }
 
+function OAuthCodeField({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = useCallback(async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const input = document.createElement("input");
+        input.value = code;
+        input.setAttribute("readonly", "true");
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }, [code]);
+
+  return (
+    <div className="oauthCodeBox">
+      <label htmlFor="oauth-code-input">코드</label>
+      <div className="oauthCodeRow">
+        <input
+          id="oauth-code-input"
+          readOnly
+          value={code}
+          onFocus={(event) => event.currentTarget.select()}
+          onClick={(event) => event.currentTarget.select()}
+          aria-label="OpenAI 로그인 코드"
+        />
+        <button type="button" className="secondaryButton" onClick={copyCode}>
+          {copied ? "복사됨" : "코드 복사"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardStep; setStep: (s: WizardStep) => void; completeSetup: () => void } & SettingsPanelProps) {
   useEffect(() => {
     if (step === "oauth" && props.codexStatus?.authenticated) {
@@ -91,9 +136,7 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
               {props.isPolling ? "로그인 확인 중..." : "로그인 창 열기"}
             </button>
             {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
-            {props.oauthLoginCode && (
-              <p className="oauthCode">코드: <strong>{props.oauthLoginCode}</strong></p>
-            )}
+            {props.oauthLoginCode && <OAuthCodeField code={props.oauthLoginCode} />}
             {props.oauthLoginUrl && (
               <p className="settingsHint">
                 팝업이 막혔다면 →{" "}
@@ -176,7 +219,7 @@ function SettingsModal(props: SettingsPanelProps) {
         {isOauth && (
           <div className="oauthLoginBox">
             <button className="secondaryButton" onClick={props.onOauthLogin}>OpenAI 계정 로그인하기</button>
-            {props.oauthLoginCode && <p>코드: <strong>{props.oauthLoginCode}</strong></p>}
+            {props.oauthLoginCode && <OAuthCodeField code={props.oauthLoginCode} />}
             {props.oauthLoginUrl && <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">로그인 창 다시 열기</a>}
           </div>
         )}
