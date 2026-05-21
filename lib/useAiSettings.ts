@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { startBrowserOpenAiAccountLogin, type OpenAiLoginStartResult } from "./openai-login-popup";
 
 export type AiProvider = "openai" | "openai-oauth" | "ollama" | "mlx" | "custom";
@@ -30,12 +30,18 @@ export function useAiSettings() {
   const [oauthLoginCode, setOauthLoginCode] = useState("");
   const [oauthLoginUrl, setOauthLoginUrl] = useState("");
 
-  const effectiveAiSettings = useMemo<AiSettings>(() => ({
-    provider: aiProvider,
-    apiKey: aiApiKey.trim() || undefined,
-    baseUrl: aiBaseUrl.trim() || undefined,
-    model: selectedModel,
-  }), [aiProvider, aiApiKey, aiBaseUrl, selectedModel]);
+  const pollingRef = useRef<{ device_auth_id: string; user_code: string } | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+
+  const effectiveAiSettings = useMemo<AiSettings>(
+    () => ({
+      provider: aiProvider,
+      apiKey: aiApiKey.trim() || undefined,
+      baseUrl: aiBaseUrl.trim() || undefined,
+      model: selectedModel,
+    }),
+    [aiProvider, aiApiKey, aiBaseUrl, selectedModel],
+  );
 
   const refreshCodexSettings = useCallback(async () => {
     try {
@@ -49,7 +55,12 @@ export function useAiSettings() {
       const saved = window.localStorage.getItem("hwp-ai-model");
       setSelectedModel(saved && next.includes(saved) ? saved : next[0]);
     } catch (error) {
-      setCodexStatus({ authenticated: false, source: "missing", authFile: "~/.codex/auth.json", message: error instanceof Error ? error.message : "설정을 불러오지 못했습니다." });
+      setCodexStatus({
+        authenticated: false,
+        source: "missing",
+        authFile: "~/.codex/auth.json",
+        message: error instanceof Error ? error.message : "설정을 불러오지 못했습니다.",
+      });
     }
   }, []);
 
@@ -58,7 +69,11 @@ export function useAiSettings() {
     const savedProvider = window.localStorage.getItem("hwp-ai-provider") as AiProvider | null;
     const savedKey = window.localStorage.getItem("hwp-ai-api-key");
     const savedUrl = window.localStorage.getItem("hwp-ai-base-url");
-    if (savedProvider && ["openai","openai-oauth","ollama","mlx","custom"].includes(savedProvider)) setAiProvider(savedProvider);
+    if (
+      savedProvider &&
+      ["openai", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
+    )
+      setAiProvider(savedProvider);
     if (savedKey) setAiApiKey(savedKey);
     if (savedUrl) setAiBaseUrl(savedUrl);
   }, [refreshCodexSettings]);
@@ -72,10 +87,38 @@ export function useAiSettings() {
     else window.localStorage.removeItem("hwp-ai-base-url");
   }, [selectedModel, aiProvider, aiApiKey, aiBaseUrl]);
 
+  useEffect(() => {
+    if (!isPolling) return;
+    const id = setInterval(async () => {
+      const p = pollingRef.current;
+      if (!p) return;
+      try {
+        const res = await fetch(
+          `/api/codex/login/poll?device_auth_id=${encodeURIComponent(p.device_auth_id)}&user_code=${encodeURIComponent(p.user_code)}`,
+        );
+        const data = (await res.json()) as { status: string; error?: string };
+        if (data.status === "complete") {
+          pollingRef.current = null;
+          setIsPolling(false);
+          setAiTestMessage("로그인이 완료되었습니다. 설정을 불러오는 중...");
+          await refreshCodexSettings();
+          setAiTestMessage("로그인이 완료되었습니다.");
+        }
+      } catch {
+        // 일시적 네트워크 오류는 무시하고 계속 폴링
+      }
+    }, 5000);
+    return () => clearInterval(id);
+  }, [isPolling, refreshCodexSettings]);
+
   const testAiSettings = useCallback(async () => {
     setAiTestMessage("연결을 확인하는 중입니다...");
     try {
-      const res = await fetch("/api/ai/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ aiSettings: effectiveAiSettings }) });
+      const res = await fetch("/api/ai/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiSettings: effectiveAiSettings }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "연결 테스트에 실패했습니다");
       setAiTestMessage(data.message || "연결에 성공했습니다.");
@@ -89,12 +132,15 @@ export function useAiSettings() {
     setAiTestMessage("OpenAI 계정 로그인 코드를 만드는 중입니다...");
     setOauthLoginCode("");
     setOauthLoginUrl("");
-    const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+    setIsPolling(false);
+    pollingRef.current = null;
+
+    const isElectron =
+      typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+
     try {
       const result = await startBrowserOpenAiAccountLogin({
         openWindow: (url, target, features) => {
-          // Electron에서 about:blank 예약을 건너뜀.
-          // 실제 loginUrl은 setWindowOpenHandler → shell.openExternal → 기본 브라우저로 열림.
           if (isElectron && (!url || url === "about:blank")) return null;
           return window.open(url, target, features);
         },
@@ -105,22 +151,44 @@ export function useAiSettings() {
           return data as OpenAiLoginStartResult;
         },
       });
-      setOauthLoginCode(result.data.code || "");
-      setOauthLoginUrl(result.data.loginUrl || "");
-      const notice = result.popupBlocked ? " 팝업이 차단되면 아래 링크를 눌러 주세요." : "";
-      setAiTestMessage((result.data.message || "로그인 창에서 코드를 입력해 주세요.") + notice);
+
+      const loginData = result.data;
+      setOauthLoginCode(loginData.code || "");
+      setOauthLoginUrl(loginData.loginUrl || "");
+
+      if (loginData.device_auth_id && loginData.code) {
+        pollingRef.current = { device_auth_id: loginData.device_auth_id, user_code: loginData.code };
+        setIsPolling(true);
+        setAiTestMessage("로그인 창에서 코드를 입력해 주세요. 완료되면 자동으로 감지합니다.");
+      } else {
+        const notice = result.popupBlocked ? " 팝업이 차단되면 아래 링크를 눌러 주세요." : "";
+        setAiTestMessage(
+          (loginData.message || "로그인 창에서 코드를 입력해 주세요.") + notice,
+        );
+      }
     } catch (error) {
       setAiTestMessage(error instanceof Error ? error.message : String(error));
     }
   }, []);
 
   return {
-    aiProvider, setAiProvider,
-    aiApiKey, setAiApiKey,
-    aiBaseUrl, setAiBaseUrl,
-    selectedModel, setSelectedModel,
-    models, codexStatus, effectiveAiSettings,
-    aiTestMessage, oauthLoginCode, oauthLoginUrl,
-    refreshCodexSettings, testAiSettings, startOpenAiOauthLogin,
+    aiProvider,
+    setAiProvider,
+    aiApiKey,
+    setAiApiKey,
+    aiBaseUrl,
+    setAiBaseUrl,
+    selectedModel,
+    setSelectedModel,
+    models,
+    codexStatus,
+    effectiveAiSettings,
+    aiTestMessage,
+    oauthLoginCode,
+    oauthLoginUrl,
+    isPolling,
+    refreshCodexSettings,
+    testAiSettings,
+    startOpenAiOauthLogin,
   };
 }
