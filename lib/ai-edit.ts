@@ -1,7 +1,11 @@
 import { getOpenAiAuthorization } from "./codex-auth";
 import type { DocumentBlock, DocumentPatch } from "./document";
+import * as childProcess from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-export type AiProvider = "openai" | "openai-oauth" | "ollama" | "mlx" | "custom";
+export type AiProvider = "openai" | "codex-cli" | "gemini" | "gemini-cli" | "openai-oauth" | "ollama" | "mlx" | "custom";
 
 export type AiSettings = {
   provider?: AiProvider;
@@ -16,6 +20,17 @@ export type AiEditRequest = {
   model?: string;
   aiSettings?: AiSettings;
 };
+
+type ExecFileImpl = typeof childProcess.execFile;
+let execFileImpl: ExecFileImpl = childProcess.execFile;
+
+export function setExecFileForTest(next: ExecFileImpl) {
+  execFileImpl = next;
+}
+
+export function resetExecFileForTest() {
+  execFileImpl = childProcess.execFile;
+}
 
 function parseJsonFromText(text: string): { patches?: DocumentPatch[] } {
   const trimmed = text.trim();
@@ -49,6 +64,34 @@ function sanitizeBaseUrl(baseUrl: string | undefined, fallback: string): string 
 
 function resolveRequestModel(request: AiEditRequest): string {
   return sanitizeModel(request.aiSettings?.model || request.model);
+}
+
+function buildPlainPrompt(request: AiEditRequest): string {
+  return buildChatMessages(request)
+    .map((message) => `${message.role.toUpperCase()}:\n${message.content}`)
+    .join("\n\n");
+}
+
+function extractGeminiResponseText(data: unknown): string {
+  const d = data as Record<string, unknown>;
+  const candidates = d.candidates as unknown[] | undefined;
+  const parts = (((candidates?.[0] as Record<string, unknown>)?.content as Record<string, unknown>)?.parts ?? []) as unknown[];
+  return parts
+    .map((part) => (part as Record<string, unknown>)?.text)
+    .filter((text): text is string => typeof text === "string")
+    .join("\n");
+}
+
+function execFileAsync(command: string, args: string[], cwd = process.cwd()): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFileImpl(command, args, { cwd, maxBuffer: 1024 * 1024 * 20 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`${command} 실행에 실패했습니다: ${stderr || error.message}`));
+        return;
+      }
+      resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
+    });
+  });
 }
 
 function getClientOpenAiAuthorization(settings?: AiSettings) {
@@ -176,17 +219,81 @@ async function requestPatchesWithOllama(request: AiEditRequest): Promise<Documen
   return parseJsonFromText(extractChatResponseText(data)).patches ?? [];
 }
 
+async function requestPatchesWithGeminiApi(request: AiEditRequest): Promise<DocumentPatch[]> {
+  const apiKey = request.aiSettings?.apiKey?.trim() || process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) throw new Error("Gemini API 키를 입력하거나 GEMINI_API_KEY 환경 변수를 설정해 주세요.");
+
+  const model = resolveRequestModel(request);
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: buildPlainPrompt(request) }] }],
+        generationConfig: { temperature: 0 },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Gemini API 호출에 실패했습니다: ${detail}`);
+  }
+
+  const data = await response.json();
+  return parseJsonFromText(extractGeminiResponseText(data)).patches ?? [];
+}
+
+async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<DocumentPatch[]> {
+  const dir = await mkdtemp(join(tmpdir(), "hwp-ai-codex-"));
+  const outputPath = join(dir, "last-message.txt");
+  try {
+    await execFileAsync("codex", [
+      "exec",
+      "--color",
+      "never",
+      "--output-last-message",
+      outputPath,
+      "--skip-git-repo-check",
+      "--cd",
+      process.cwd(),
+      "--model",
+      resolveRequestModel(request),
+      buildPlainPrompt(request),
+    ]);
+    const text = await readFile(outputPath, "utf8");
+    return parseJsonFromText(text).patches ?? [];
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function requestPatchesWithGeminiCli(request: AiEditRequest): Promise<DocumentPatch[]> {
+  const { stdout } = await execFileAsync("gemini", [
+    "--model",
+    resolveRequestModel(request),
+    "--prompt",
+    buildPlainPrompt(request),
+    "--output-format",
+    "text",
+    "--raw-output",
+    "--accept-raw-output-risk",
+  ]);
+  return parseJsonFromText(stdout).patches ?? [];
+}
+
 export async function testAiConnection(settings: AiSettings): Promise<{ ok: boolean; message: string }> {
   const provider = settings.provider || "openai";
 
-  if (provider === "openai-oauth") {
-    const authorization = getOpenAiAuthorization();
-    if (!authorization) {
-      throw new Error(
-        "OpenAI 계정 로그인이 필요합니다. 먼저 인공지능 설정에서 OpenAI 계정 로그인을 연결해 주세요.",
-      );
-    }
-    return { ok: true, message: "OpenAI 계정 로그인이 연결되어 있습니다." };
+  if (provider === "codex-cli" || provider === "openai-oauth") {
+    await execFileAsync("codex", ["--version"]);
+    return { ok: true, message: "Codex CLI를 사용할 수 있습니다. 터미널에서 codex login이 완료되어 있어야 합니다." };
+  }
+
+  if (provider === "gemini-cli") {
+    await execFileAsync("gemini", ["--version"]);
+    return { ok: true, message: "Gemini CLI를 사용할 수 있습니다. 터미널에서 Gemini CLI 로그인이 완료되어 있어야 합니다." };
   }
 
   if (provider === "ollama") {
@@ -194,6 +301,14 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
     const response = await fetch(`${baseUrl}/api/tags`);
     if (!response.ok) throw new Error(`연결 테스트에 실패했습니다: ${await response.text()}`);
     return { ok: true, message: "올라마 서버 연결에 성공했습니다." };
+  }
+
+  if (provider === "gemini") {
+    const apiKey = settings.apiKey?.trim() || process.env.GEMINI_API_KEY?.trim();
+    if (!apiKey) throw new Error("Gemini API 키를 입력해 주세요.");
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+    if (!response.ok) throw new Error(`Gemini API 연결 테스트에 실패했습니다: ${await response.text()}`);
+    return { ok: true, message: "Gemini API 연결에 성공했습니다." };
   }
 
   const baseUrl =
@@ -216,19 +331,9 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
 export async function requestDocumentPatches(request: AiEditRequest): Promise<DocumentPatch[]> {
   const provider = request.aiSettings?.provider || "openai";
 
-  if (provider === "openai-oauth") {
-    const authorization = getOpenAiAuthorization();
-    if (!authorization) {
-      throw new Error(
-        "OpenAI 계정 로그인이 필요합니다. 먼저 인공지능 설정에서 OpenAI 계정 로그인을 연결해 주세요.",
-      );
-    }
-    return requestPatchesWithOpenAiCompatible(
-      { ...request, model: resolveRequestModel(request) },
-      "https://api.openai.com",
-      authorization.header,
-    );
-  }
+  if (provider === "codex-cli" || provider === "openai-oauth") return requestPatchesWithCodexCli(request);
+  if (provider === "gemini") return requestPatchesWithGeminiApi(request);
+  if (provider === "gemini-cli") return requestPatchesWithGeminiCli(request);
 
   if (provider === "ollama") return requestPatchesWithOllama(request);
 

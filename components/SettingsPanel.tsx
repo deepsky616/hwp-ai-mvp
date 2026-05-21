@@ -109,8 +109,14 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
             <button onClick={() => { props.setAiProvider("openai"); setStep("apikey"); }}>
               API 키가 있습니다
             </button>
-            <button onClick={() => { props.setAiProvider("openai-oauth"); setStep("oauth"); }}>
-              OpenAI 계정으로 로그인
+            <button onClick={() => { props.setAiProvider("codex-cli"); setStep("oauth"); }}>
+              Codex CLI 로그인 사용
+            </button>
+            <button onClick={() => { props.setAiProvider("gemini"); setStep("apikey"); }}>
+              Gemini API 키가 있습니다
+            </button>
+            <button onClick={() => { props.setAiProvider("gemini-cli"); setStep("oauth"); }}>
+              Gemini CLI 로그인 사용
             </button>
             <button onClick={() => { props.setAiProvider("ollama"); setStep("local"); }}>
               로컬 AI 사용 (Ollama / MLX)
@@ -120,7 +126,7 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
         {step === "apikey" && (
           <>
             <h2>API 키를 입력해 주세요</h2>
-            <input type="password" value={props.aiApiKey} onChange={(e) => props.setAiApiKey(e.target.value)} placeholder="sk-..." autoFocus />
+            <input type="password" value={props.aiApiKey} onChange={(e) => props.setAiApiKey(e.target.value)} placeholder={props.aiProvider === "gemini" ? "Gemini API 키" : "sk-..."} autoFocus />
             <div className="wizardActions">
               <button className="secondaryButton" onClick={() => setStep("pick")}>뒤로</button>
               <button onClick={async () => { await props.onTest(); completeSetup(); }}>연결 확인 후 시작</button>
@@ -130,19 +136,16 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
         )}
         {step === "oauth" && (
           <>
-            <h2>OpenAI 계정 로그인</h2>
-            <p className="settingsHint">아래 버튼을 누르면 로그인 창이 열립니다. 창에 표시된 코드를 입력해 주세요.</p>
-            <button onClick={props.onOauthLogin} disabled={props.isPolling}>
-              {props.isPolling ? "로그인 확인 중..." : "로그인 창 열기"}
+            <h2>{props.aiProvider === "gemini-cli" ? "Gemini CLI 로그인" : "Codex CLI 로그인"}</h2>
+            <p className="settingsHint">
+              {props.aiProvider === "gemini-cli"
+                ? "터미널에서 gemini 로그인을 마친 뒤 연결 확인을 눌러 주세요."
+                : "터미널에서 codex login을 마친 뒤 연결 확인을 눌러 주세요."}
+            </p>
+            <button onClick={props.onTest} disabled={props.isPolling}>
+              연결 확인
             </button>
             {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
-            {props.oauthLoginCode && <OAuthCodeField code={props.oauthLoginCode} />}
-            {props.oauthLoginUrl && (
-              <p className="settingsHint">
-                팝업이 막혔다면 →{" "}
-                <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">로그인 창 직접 열기</a>
-              </p>
-            )}
             <div className="wizardActions">
               <button className="secondaryButton" onClick={() => setStep("pick")}>뒤로</button>
               <button onClick={async () => {
@@ -179,7 +182,9 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
 }
 
 function SettingsModal(props: SettingsPanelProps) {
-  const isOauth = props.aiProvider === "openai-oauth";
+  const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli" || props.aiProvider === "openai-oauth";
+  const usesFixedModelList = ["openai", "codex-cli", "gemini", "gemini-cli", "openai-oauth"].includes(props.aiProvider);
+  const usesApiKey = props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom";
   const connected = props.codexStatus?.authenticated || props.codexStatus?.source === "api-key";
 
   return (
@@ -196,14 +201,16 @@ function SettingsModal(props: SettingsPanelProps) {
         <label>제공자
           <select value={props.aiProvider} onChange={(e) => props.setAiProvider(e.target.value as AiProvider)}>
             <option value="openai">OpenAI API 키</option>
-            <option value="openai-oauth">OpenAI 계정 로그인</option>
+            <option value="codex-cli">Codex CLI 로그인</option>
+            <option value="gemini">Gemini API 키</option>
+            <option value="gemini-cli">Gemini CLI 로그인</option>
             <option value="ollama">로컬 Ollama</option>
             <option value="mlx">로컬 MLX 서버</option>
             <option value="custom">직접 입력 서버</option>
           </select>
         </label>
         <label>모델
-          {(props.aiProvider === "openai" || isOauth) ? (
+          {usesFixedModelList ? (
             <select value={props.selectedModel} onChange={(e) => props.setSelectedModel(e.target.value)}>
               {props.models.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
@@ -211,21 +218,24 @@ function SettingsModal(props: SettingsPanelProps) {
             <input value={props.selectedModel} onChange={(e) => props.setSelectedModel(e.target.value)} placeholder="모델명" />
           )}
         </label>
-        {!isOauth && props.aiProvider !== "openai" && (
+        {!isCli && props.aiProvider !== "openai" && props.aiProvider !== "gemini" && (
           <label>서버 주소
             <input value={props.aiBaseUrl} onChange={(e) => props.setAiBaseUrl(e.target.value)} placeholder="http://localhost:11434" />
           </label>
         )}
-        {isOauth && (
+        {isCli && (
           <div className="oauthLoginBox">
-            <button className="secondaryButton" onClick={props.onOauthLogin}>OpenAI 계정 로그인하기</button>
-            {props.oauthLoginCode && <OAuthCodeField code={props.oauthLoginCode} />}
-            {props.oauthLoginUrl && <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">로그인 창 다시 열기</a>}
+            <button className="secondaryButton" onClick={props.onTest}>CLI 연결 테스트</button>
+            <p className="settingsHint">
+              {props.aiProvider === "gemini-cli"
+                ? "Gemini CLI 로그인을 사용합니다. 터미널에서 gemini 로그인이 먼저 완료되어야 합니다."
+                : "Codex CLI 로그인을 사용합니다. 터미널에서 codex login이 먼저 완료되어야 합니다."}
+            </p>
           </div>
         )}
-        {(props.aiProvider === "openai" || props.aiProvider === "custom") && (
+        {usesApiKey && (
           <label>API 키
-            <input type="password" value={props.aiApiKey} onChange={(e) => props.setAiApiKey(e.target.value)} placeholder="브라우저에 저장됩니다" />
+            <input type="password" value={props.aiApiKey} onChange={(e) => props.setAiApiKey(e.target.value)} placeholder={props.aiProvider === "gemini" ? "Gemini API 키" : "브라우저에 저장됩니다"} />
           </label>
         )}
         <div className="settingsActions">

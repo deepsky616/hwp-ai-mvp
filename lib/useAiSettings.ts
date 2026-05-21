@@ -2,7 +2,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { startBrowserOpenAiAccountLogin, type OpenAiLoginStartResult } from "./openai-login-popup";
 
-export type AiProvider = "openai" | "openai-oauth" | "ollama" | "mlx" | "custom";
+export type AiProvider = "openai" | "codex-cli" | "gemini" | "gemini-cli" | "openai-oauth" | "ollama" | "mlx" | "custom";
+
+const OPENAI_MODELS = ["gpt-5.4-mini", "gpt-5.3-instant", "gpt-5.4-thinking", "gpt-5.4-pro"];
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash", "gemini-3-pro"];
+
+function modelsForProvider(provider: AiProvider): string[] {
+  if (provider === "gemini" || provider === "gemini-cli") return GEMINI_MODELS;
+  if (provider === "openai" || provider === "codex-cli" || provider === "openai-oauth") return OPENAI_MODELS;
+  return [];
+}
 
 export type AiSettings = {
   provider: AiProvider;
@@ -23,8 +32,8 @@ export function useAiSettings() {
   const [aiProvider, setAiProvider] = useState<AiProvider>("openai");
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiBaseUrl, setAiBaseUrl] = useState("");
-  const [selectedModel, setSelectedModel] = useState("gpt-4.1-mini");
-  const [models, setModels] = useState<string[]>(["gpt-4.1-mini"]);
+  const [selectedModel, setSelectedModel] = useState(OPENAI_MODELS[0]);
+  const [models, setModels] = useState<string[]>(OPENAI_MODELS);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [aiTestMessage, setAiTestMessage] = useState("");
   const [oauthLoginCode, setOauthLoginCode] = useState("");
@@ -48,12 +57,6 @@ export function useAiSettings() {
       const statusRes = await fetch("/api/codex/status");
       const statusData = (await statusRes.json()) as CodexStatus;
       setCodexStatus(statusData);
-      const modelsRes = await fetch("/api/codex/models");
-      const modelsData = (await modelsRes.json()) as { models?: string[] };
-      const next = modelsData.models?.length ? modelsData.models : ["gpt-4.1-mini"];
-      setModels(next);
-      const saved = window.localStorage.getItem("hwp-ai-model");
-      setSelectedModel(saved && next.includes(saved) ? saved : next[0]);
     } catch (error) {
       setCodexStatus({
         authenticated: false,
@@ -71,12 +74,19 @@ export function useAiSettings() {
     const savedUrl = window.localStorage.getItem("hwp-ai-base-url");
     if (
       savedProvider &&
-      ["openai", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
+      ["openai", "codex-cli", "gemini", "gemini-cli", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
     )
-      setAiProvider(savedProvider);
+      setAiProvider(savedProvider === "openai-oauth" ? "codex-cli" : savedProvider);
     if (savedKey) setAiApiKey(savedKey);
     if (savedUrl) setAiBaseUrl(savedUrl);
   }, [refreshCodexSettings]);
+
+  useEffect(() => {
+    const next = modelsForProvider(aiProvider);
+    if (!next.length) return;
+    setModels(next);
+    setSelectedModel((current) => (next.includes(current) ? current : next[0]));
+  }, [aiProvider]);
 
   useEffect(() => {
     window.localStorage.setItem("hwp-ai-model", selectedModel);

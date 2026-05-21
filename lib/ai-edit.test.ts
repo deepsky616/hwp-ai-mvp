@@ -1,9 +1,15 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildAiEditPayload, extractResponseText, requestDocumentPatches, testAiConnection } from "./ai-edit";
+import {
+  buildAiEditPayload,
+  extractResponseText,
+  requestDocumentPatches,
+  resetExecFileForTest,
+  setExecFileForTest,
+  testAiConnection,
+} from "./ai-edit";
 import type { DocumentBlock } from "./document";
+import * as childProcess from "node:child_process";
 
 const originalEnv = { ...process.env };
 
@@ -13,6 +19,7 @@ const blocks: DocumentBlock[] = [
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetExecFileForTest();
   process.env = { ...originalEnv };
 });
 
@@ -105,36 +112,69 @@ describe("인공지능 문서 수정", () => {
     }));
   });
 
-  it("OpenAI 계정 연결 테스트는 OpenAI 계정 로그인 파일을 사용하고 네트워크에 키를 보내지 않습니다", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "hwp-ai-auth-"));
-    const authFile = join(dir, "auth.json");
-    try {
-      await writeFile(authFile, JSON.stringify({ tokens: { access_token: "oauth-token", account_id: "acct-test" } }), "utf8");
-      process.env.CODEX_AUTH_FILE = authFile;
-      delete process.env.OPENAI_API_KEY;
-      const fetchMock = vi.fn();
-      vi.stubGlobal("fetch", fetchMock);
+  it("Gemini API 키로 문서 패치를 요청합니다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ patches: [] }) }] } }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
-      await expect(testAiConnection({ provider: "openai-oauth", model: "gpt-5.5" })).resolves.toMatchObject({
-        ok: true,
-        message: "OpenAI 계정 로그인이 연결되어 있습니다.",
-      });
-
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("OpenAI 계정 선택 시 로그인 파일이 없으면 안내 오류를 반환합니다", async () => {
-    process.env.CODEX_AUTH_FILE = "/tmp/없는-계정-파일.json";
-    delete process.env.OPENAI_API_KEY;
-
-    await expect(testAiConnection({ provider: "openai-oauth", model: "gpt-5.5" })).rejects.toThrow("OpenAI 계정 로그인이 필요합니다");
-    await expect(requestDocumentPatches({
+    await requestDocumentPatches({
       instruction: "띄어쓰기 수정",
       blocks,
-      aiSettings: { provider: "openai-oauth", model: "gpt-5.5" },
-    })).rejects.toThrow("OpenAI 계정 로그인이 필요합니다");
+      aiSettings: { provider: "gemini", apiKey: "gemini-key", model: "gemini-2.5-flash" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=gemini-key",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("Codex CLI로 문서 패치를 요청합니다", async () => {
+    const execFileMock = vi.fn((command, args, options, callback) => {
+      const realCallback = (typeof options === "function" ? options : callback) as Function;
+      const outputPath = (args as string[])[(args as string[]).indexOf("--output-last-message") + 1];
+      writeFile(outputPath, JSON.stringify({ patches: [] }), "utf8").then(() => realCallback(null, "", ""));
+      return {} as childProcess.ChildProcess;
+    }) as unknown as typeof childProcess.execFile;
+    setExecFileForTest(execFileMock);
+
+    await requestDocumentPatches({
+      instruction: "띄어쓰기 수정",
+      blocks,
+      aiSettings: { provider: "codex-cli", model: "gpt-5.4-pro" },
+    });
+
+    expect(execFileMock).toHaveBeenCalledWith(
+      "codex",
+      expect.arrayContaining(["exec", "--model", "gpt-5.4-pro"]),
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("Gemini CLI로 문서 패치를 요청합니다", async () => {
+    const execFileMock = vi.fn((command, args, options, callback) => {
+      const realCallback = (typeof options === "function" ? options : callback) as Function;
+      realCallback(null, JSON.stringify({ patches: [] }), "");
+      return {} as childProcess.ChildProcess;
+    }) as unknown as typeof childProcess.execFile;
+    setExecFileForTest(execFileMock);
+
+    await requestDocumentPatches({
+      instruction: "띄어쓰기 수정",
+      blocks,
+      aiSettings: { provider: "gemini-cli", model: "gemini-3-pro" },
+    });
+
+    expect(execFileMock).toHaveBeenCalledWith(
+      "gemini",
+      expect.arrayContaining(["--model", "gemini-3-pro", "--output-format", "text"]),
+      expect.any(Object),
+      expect.any(Function),
+    );
   });
 });
