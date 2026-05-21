@@ -19,6 +19,7 @@ export type OAuthTokens = {
 };
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const DEVICE_AUTH_REDIRECT_URI = "https://auth.openai.com/api/accounts/deviceauth/callback";
 
 export async function startDeviceAuth(): Promise<DeviceAuthStart> {
   const res = await fetch(
@@ -82,7 +83,7 @@ export async function exchangeCodeForTokens(
     code: authorization_code,
     code_verifier: code_verifier,
     client_id: CLIENT_ID,
-    redirect_uri: "http://localhost:1455/auth/callback",
+    redirect_uri: DEVICE_AUTH_REDIRECT_URI,
   });
 
   const res = await fetch("https://auth.openai.com/oauth/token", {

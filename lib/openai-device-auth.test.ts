@@ -76,6 +76,9 @@ describe("exchangeCodeForTokens", () => {
     expect(String(init.body)).toContain("grant_type=authorization_code");
     expect(String(init.body)).toContain("code=auth-xyz");
     expect(String(init.body)).toContain("code_verifier=verifier-abc");
+    expect(String(init.body)).toContain(
+      "redirect_uri=https%3A%2F%2Fauth.openai.com%2Fapi%2Faccounts%2Fdeviceauth%2Fcallback",
+    );
   });
 
   it("교환 실패 시 throw한다", async () => {
