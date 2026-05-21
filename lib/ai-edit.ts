@@ -4,9 +4,9 @@ import * as childProcess from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveCli, type CliName } from "./cli-resolver";
 
 export type AiProvider = "openai" | "codex-cli" | "gemini" | "gemini-cli" | "openai-oauth" | "ollama" | "mlx" | "custom";
+type CliName = "codex" | "gemini";
 
 export type AiSettings = {
   provider?: AiProvider;
@@ -95,7 +95,8 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd(), env
   });
 }
 
-function execCliAsync(name: CliName, args: string[], cwd = process.cwd()): Promise<{ stdout: string; stderr: string }> {
+async function execCliAsync(name: CliName, args: string[], cwd = process.cwd()): Promise<{ stdout: string; stderr: string }> {
+  const { resolveCli } = await import("./cli-resolver");
   const resolved = resolveCli(name);
   return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath);
 }

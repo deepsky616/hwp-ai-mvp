@@ -1,6 +1,15 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { delimiter, dirname, join, sep } from "node:path";
+import { createRequire } from "node:module";
+
+const nodeRequire = createRequire(import.meta.url);
+
+function fsModule(): typeof import("node:fs") {
+  return nodeRequire("node:fs") as typeof import("node:fs");
+}
+
+function osModule(): typeof import("node:os") {
+  return nodeRequire("node:os") as typeof import("node:os");
+}
 
 export type CliName = "codex" | "gemini";
 
@@ -12,7 +21,8 @@ export type ResolvedCli = {
 
 function isFile(filePath: string): boolean {
   try {
-    return existsSync(filePath) && statSync(filePath).isFile();
+    const fs = fsModule();
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
   } catch {
     return false;
   }
@@ -20,9 +30,10 @@ function isFile(filePath: string): boolean {
 
 function listDirs(parent: string): string[] {
   try {
-    return readdirSync(parent)
+    const fs = fsModule();
+    return fs.readdirSync(parent)
       .map((entry) => join(parent, entry))
-      .filter((entry) => statSync(entry).isDirectory());
+      .filter((entry) => fs.statSync(entry).isDirectory());
   } catch {
     return [];
   }
@@ -33,8 +44,9 @@ function pathEntries(pathValue = process.env.PATH || ""): string[] {
 }
 
 export function expandHome(input: string): string {
-  if (input === "~") return homedir();
-  if (input.startsWith(`~${sep}`)) return join(homedir(), input.slice(2));
+  const home = osModule().homedir();
+  if (input === "~") return home;
+  if (input.startsWith(`~${sep}`)) return join(home, input.slice(2));
   return input;
 }
 
@@ -43,7 +55,7 @@ function cliFileNames(name: CliName, platform = process.platform): string[] {
 }
 
 function candidatePaths(name: CliName, platform = process.platform): string[] {
-  const home = homedir();
+  const home = osModule().homedir();
   const nvmBins = listDirs(join(home, ".nvm", "versions", "node"))
     .map((dir) => join(dir, "bin", platform === "win32" ? `${name}.cmd` : name));
 
