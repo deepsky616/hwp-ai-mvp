@@ -1,6 +1,6 @@
-import { mkdirSync, writeFileSync } from "fs";
-import { homedir } from "os";
-import { join, dirname } from "path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, dirname } from "node:path";
 
 export type DeviceAuthStart = {
   device_auth_id: string;
@@ -56,7 +56,7 @@ export async function pollDeviceAuth(
     },
   );
 
-  if (res.status === 403 || res.status === 404) {
+  if (res.status === 403 || res.status === 404 || res.status === 429) {
     return { status: "pending" };
   }
 

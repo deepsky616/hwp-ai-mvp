@@ -89,9 +89,11 @@ export function useAiSettings() {
 
   useEffect(() => {
     if (!isPolling) return;
+    let isRunning = false;
     const id = setInterval(async () => {
       const p = pollingRef.current;
-      if (!p) return;
+      if (!p || isRunning) return;
+      isRunning = true;
       try {
         const res = await fetch(
           `/api/codex/login/poll?device_auth_id=${encodeURIComponent(p.device_auth_id)}&user_code=${encodeURIComponent(p.user_code)}`,
@@ -106,6 +108,8 @@ export function useAiSettings() {
         }
       } catch {
         // 일시적 네트워크 오류는 무시하고 계속 폴링
+      } finally {
+        isRunning = false;
       }
     }, 5000);
     return () => clearInterval(id);
