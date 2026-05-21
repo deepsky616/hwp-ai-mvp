@@ -15,10 +15,10 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            script: desktop:win
+            eb_args: "--win nsis portable"
             artifact_glob: "dist/*.exe"
           - os: macos-latest
-            script: desktop:mac
+            eb_args: "--mac dmg"
             artifact_glob: "dist/*.dmg"
 
     runs-on: ${{ matrix.os }}
@@ -38,10 +38,9 @@ jobs:
         run: npm run build
 
       - name: Build desktop app
-        run: npm run ${{ matrix.script }}
+        run: npx electron-builder ${{ matrix.eb_args }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
