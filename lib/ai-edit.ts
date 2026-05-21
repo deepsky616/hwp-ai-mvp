@@ -4,6 +4,7 @@ import * as childProcess from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveCli, type CliName } from "./cli-resolver";
 
 export type AiProvider = "openai" | "codex-cli" | "gemini" | "gemini-cli" | "openai-oauth" | "ollama" | "mlx" | "custom";
 
@@ -82,9 +83,9 @@ function extractGeminiResponseText(data: unknown): string {
     .join("\n");
 }
 
-function execFileAsync(command: string, args: string[], cwd = process.cwd()): Promise<{ stdout: string; stderr: string }> {
+function execFileAsync(command: string, args: string[], cwd = process.cwd(), envPath?: string): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFileImpl(command, args, { cwd, maxBuffer: 1024 * 1024 * 20 }, (error, stdout, stderr) => {
+    execFileImpl(command, args, { cwd, env: envPath ? { ...process.env, PATH: envPath } : process.env, maxBuffer: 1024 * 1024 * 20 }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(`${command} 실행에 실패했습니다: ${stderr || error.message}`));
         return;
@@ -92,6 +93,11 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd()): Pr
       resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
     });
   });
+}
+
+function execCliAsync(name: CliName, args: string[], cwd = process.cwd()): Promise<{ stdout: string; stderr: string }> {
+  const resolved = resolveCli(name);
+  return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath);
 }
 
 function getClientOpenAiAuthorization(settings?: AiSettings) {
@@ -249,7 +255,7 @@ async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<Docum
   const dir = await mkdtemp(join(tmpdir(), "hwp-ai-codex-"));
   const outputPath = join(dir, "last-message.txt");
   try {
-    await execFileAsync("codex", [
+    await execCliAsync("codex", [
       "exec",
       "--color",
       "never",
@@ -270,7 +276,7 @@ async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<Docum
 }
 
 async function requestPatchesWithGeminiCli(request: AiEditRequest): Promise<DocumentPatch[]> {
-  const { stdout } = await execFileAsync("gemini", [
+  const { stdout } = await execCliAsync("gemini", [
     "--model",
     resolveRequestModel(request),
     "--prompt",
@@ -287,12 +293,12 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
   const provider = settings.provider || "openai";
 
   if (provider === "codex-cli" || provider === "openai-oauth") {
-    await execFileAsync("codex", ["--version"]);
+    await execCliAsync("codex", ["--version"]);
     return { ok: true, message: "Codex CLI를 사용할 수 있습니다. 터미널에서 codex login이 완료되어 있어야 합니다." };
   }
 
   if (provider === "gemini-cli") {
-    await execFileAsync("gemini", ["--version"]);
+    await execCliAsync("gemini", ["--version"]);
     return { ok: true, message: "Gemini CLI를 사용할 수 있습니다. 터미널에서 Gemini CLI 로그인이 완료되어 있어야 합니다." };
   }
 

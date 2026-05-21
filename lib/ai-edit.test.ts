@@ -1,4 +1,7 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import { delimiter, join } from "node:path";
+import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildAiEditPayload,
@@ -12,6 +15,7 @@ import type { DocumentBlock } from "./document";
 import * as childProcess from "node:child_process";
 
 const originalEnv = { ...process.env };
+const tempDirs: string[] = [];
 
 const blocks: DocumentBlock[] = [
   { type: "paragraph", id: "p-0-0", sectionIndex: 0, paragraphIndex: 0, length: 8, text: "안녕 하십니까" },
@@ -21,7 +25,18 @@ afterEach(() => {
   vi.restoreAllMocks();
   resetExecFileForTest();
   process.env = { ...originalEnv };
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+
+function tempCli(name: string) {
+  const dir = join(tmpdir(), `hwp-ai-cli-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, name);
+  writeFileSync(file, "");
+  tempDirs.push(dir);
+  process.env.PATH = [dir, originalEnv.PATH ?? ""].join(delimiter);
+  return file;
+}
 
 describe("인공지능 문서 수정", () => {
   it("선택한 모델을 요청 본문에 반영합니다", () => {
@@ -134,6 +149,7 @@ describe("인공지능 문서 수정", () => {
   });
 
   it("Codex CLI로 문서 패치를 요청합니다", async () => {
+    const codexPath = tempCli("codex");
     const execFileMock = vi.fn((command, args, options, callback) => {
       const realCallback = (typeof options === "function" ? options : callback) as Function;
       const outputPath = (args as string[])[(args as string[]).indexOf("--output-last-message") + 1];
@@ -149,7 +165,7 @@ describe("인공지능 문서 수정", () => {
     });
 
     expect(execFileMock).toHaveBeenCalledWith(
-      "codex",
+      codexPath,
       expect.arrayContaining(["exec", "--model", "gpt-5.4-pro"]),
       expect.any(Object),
       expect.any(Function),
@@ -157,6 +173,7 @@ describe("인공지능 문서 수정", () => {
   });
 
   it("Gemini CLI로 문서 패치를 요청합니다", async () => {
+    const geminiPath = tempCli("gemini");
     const execFileMock = vi.fn((command, args, options, callback) => {
       const realCallback = (typeof options === "function" ? options : callback) as Function;
       realCallback(null, JSON.stringify({ patches: [] }), "");
@@ -171,7 +188,7 @@ describe("인공지능 문서 수정", () => {
     });
 
     expect(execFileMock).toHaveBeenCalledWith(
-      "gemini",
+      geminiPath,
       expect.arrayContaining(["--model", "gemini-3-pro", "--output-format", "text"]),
       expect.any(Object),
       expect.any(Function),
