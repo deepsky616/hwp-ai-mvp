@@ -89,9 +89,15 @@ export function useAiSettings() {
     setAiTestMessage("OpenAI 계정 로그인 코드를 만드는 중입니다...");
     setOauthLoginCode("");
     setOauthLoginUrl("");
+    const isElectron = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
     try {
       const result = await startBrowserOpenAiAccountLogin({
-        openWindow: (url, target, features) => window.open(url, target, features),
+        openWindow: (url, target, features) => {
+          // Electron에서 about:blank 예약을 건너뜀.
+          // 실제 loginUrl은 setWindowOpenHandler → shell.openExternal → 기본 브라우저로 열림.
+          if (isElectron && (!url || url === "about:blank")) return null;
+          return window.open(url, target, features);
+        },
         requestLoginStart: async (): Promise<OpenAiLoginStartResult> => {
           const res = await fetch("/api/codex/login/start", { method: "POST" });
           const data = await res.json();
