@@ -1,7 +1,3 @@
-import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { getOpenAiAuthorization } from "./codex-auth";
 import type { DocumentBlock, DocumentPatch } from "./document";
 
@@ -105,105 +101,17 @@ export function buildAiEditPayload({ instruction, blocks, model }: AiEditRequest
   };
 }
 
-export function extractResponseText(data: any): string {
-  if (typeof data?.output_text === "string") return data.output_text;
-  if (Array.isArray(data?.output)) {
-    return data.output
-      .flatMap((item: any) => item?.content ?? [])
-      .map((item: any) => item?.text ?? "")
+export function extractResponseText(data: unknown): string {
+  const d = data as Record<string, unknown>;
+  if (typeof d?.output_text === "string") return d.output_text as string;
+  if (Array.isArray(d?.output)) {
+    return (d.output as unknown[])
+      .flatMap((item) => ((item as Record<string, unknown>)?.content ?? []) as unknown[])
+      .map((item) => (item as Record<string, unknown>)?.text ?? "")
       .filter(Boolean)
       .join("\n");
   }
   return "";
-}
-
-function runCodexCli(args: string[], input: string, cwd: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.env.CODEX_CLI_PATH || "codex", args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error("코덱스 실행 시간이 초과되었습니다."));
-    }, 180000);
-
-    child.stdout.on("data", (chunk) => { stdout += String(chunk); });
-    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      if (code === 0) resolve();
-      else reject(new Error(`코덱스 실행에 실패했습니다: ${stderr || stdout}`));
-    });
-    child.stdin.end(input);
-  });
-}
-
-async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<DocumentPatch[]> {
-  const workdir = await mkdtemp(join(tmpdir(), "hwp-ai-codex-"));
-  const schemaPath = join(workdir, "patch-schema.json");
-  const outputPath = join(workdir, "codex-output.json");
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      patches: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            type: { type: "string", enum: ["paragraph", "tableCell"] },
-            sectionIndex: { type: "number" },
-            paragraphIndex: { type: "number" },
-            parentParagraphIndex: { type: "number" },
-            controlIndex: { type: "number" },
-            cellIndex: { type: "number" },
-            cellParagraphIndex: { type: "number" },
-            text: { type: "string" },
-          },
-          required: ["type", "sectionIndex", "paragraphIndex", "parentParagraphIndex", "controlIndex", "cellIndex", "cellParagraphIndex", "text"],
-        },
-      },
-    },
-    required: ["patches"],
-  };
-
-  const prompt = [
-    "한국어 HWP 문서 블록을 사용자의 지시에 맞게 편집하세요.",
-    "좌표와 타입은 절대 바꾸지 말고, 수정이 필요한 블록만 patches에 넣으세요.",
-    "아무 설명 없이 지정된 JSON 형식으로만 답하세요.",
-    JSON.stringify({ instruction: request.instruction, blocks: request.blocks }),
-  ].join("\n\n");
-
-  try {
-    await writeFile(schemaPath, JSON.stringify(schema), "utf8");
-    await runCodexCli(
-      [
-        "exec",
-        "--skip-git-repo-check",
-        "--ephemeral",
-        "--sandbox",
-        "read-only",
-        "--model",
-        sanitizeModel(request.model),
-        "--output-schema",
-        schemaPath,
-        "--output-last-message",
-        outputPath,
-        "-",
-      ],
-      prompt,
-      workdir,
-    );
-    const output = await readFile(outputPath, "utf8");
-    return parseJsonFromText(output).patches ?? [];
-  } finally {
-    await rm(workdir, { recursive: true, force: true });
-  }
 }
 
 function buildChatMessages(request: AiEditRequest) {
@@ -211,13 +119,20 @@ function buildChatMessages(request: AiEditRequest) {
   return payload.input.map((item) => ({ role: item.role, content: item.content }));
 }
 
-function extractChatResponseText(data: any): string {
-  if (typeof data?.message?.content === "string") return data.message.content;
-  if (typeof data?.choices?.[0]?.message?.content === "string") return data.choices[0].message.content;
+function extractChatResponseText(data: unknown): string {
+  const d = data as Record<string, unknown>;
+  const msgContent = ((d?.message as Record<string, unknown>)?.content);
+  if (typeof msgContent === "string") return msgContent;
+  const choiceContent = (((d?.choices as unknown[])?.[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content;
+  if (typeof choiceContent === "string") return choiceContent;
   return extractResponseText(data);
 }
 
-async function requestPatchesWithOpenAiCompatible(request: AiEditRequest, baseUrl: string, authorizationHeader?: string): Promise<DocumentPatch[]> {
+async function requestPatchesWithOpenAiCompatible(
+  request: AiEditRequest,
+  baseUrl: string,
+  authorizationHeader?: string,
+): Promise<DocumentPatch[]> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authorizationHeader) headers.Authorization = authorizationHeader;
   const response = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -263,10 +178,13 @@ async function requestPatchesWithOllama(request: AiEditRequest): Promise<Documen
 
 export async function testAiConnection(settings: AiSettings): Promise<{ ok: boolean; message: string }> {
   const provider = settings.provider || "openai";
+
   if (provider === "openai-oauth") {
     const authorization = getOpenAiAuthorization();
-    if (authorization?.source !== "codex-oauth") {
-      throw new Error("OpenAI 계정 로그인이 필요합니다. 먼저 인공지능 설정에서 OpenAI 계정 로그인을 연결해 주세요.");
+    if (!authorization) {
+      throw new Error(
+        "OpenAI 계정 로그인이 필요합니다. 먼저 인공지능 설정에서 OpenAI 계정 로그인을 연결해 주세요.",
+      );
     }
     return { ok: true, message: "OpenAI 계정 로그인이 연결되어 있습니다." };
   }
@@ -278,9 +196,13 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
     return { ok: true, message: "올라마 서버 연결에 성공했습니다." };
   }
 
-  const baseUrl = provider === "openai"
-    ? "https://api.openai.com"
-    : sanitizeBaseUrl(settings.baseUrl, provider === "mlx" ? "http://localhost:8080" : "http://localhost:8080");
+  const baseUrl =
+    provider === "openai"
+      ? "https://api.openai.com"
+      : sanitizeBaseUrl(
+          settings.baseUrl,
+          provider === "mlx" ? "http://localhost:8080" : "http://localhost:8080",
+        );
   const headers: Record<string, string> = {};
   const key = settings.apiKey?.trim();
   if (key) headers.Authorization = `Bearer ${key}`;
@@ -293,27 +215,36 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
 
 export async function requestDocumentPatches(request: AiEditRequest): Promise<DocumentPatch[]> {
   const provider = request.aiSettings?.provider || "openai";
+
   if (provider === "openai-oauth") {
     const authorization = getOpenAiAuthorization();
-    if (authorization?.source !== "codex-oauth") {
-      throw new Error("OpenAI 계정 로그인이 필요합니다. 먼저 인공지능 설정에서 OpenAI 계정 로그인을 연결해 주세요.");
+    if (!authorization) {
+      throw new Error(
+        "OpenAI 계정 로그인이 필요합니다. 먼저 인공지능 설정에서 OpenAI 계정 로그인을 연결해 주세요.",
+      );
     }
-    return requestPatchesWithCodexCli({ ...request, model: resolveRequestModel(request) });
+    return requestPatchesWithOpenAiCompatible(
+      { ...request, model: resolveRequestModel(request) },
+      "https://api.openai.com",
+      authorization.header,
+    );
   }
+
   if (provider === "ollama") return requestPatchesWithOllama(request);
+
   if (provider === "mlx" || provider === "custom") {
     const baseUrl = sanitizeBaseUrl(request.aiSettings?.baseUrl, "http://localhost:8080");
     const key = request.aiSettings?.apiKey?.trim();
-    return requestPatchesWithOpenAiCompatible(request, baseUrl, key ? `Bearer ${key}` : undefined);
+    return requestPatchesWithOpenAiCompatible(
+      request,
+      baseUrl,
+      key ? `Bearer ${key}` : undefined,
+    );
   }
 
   const authorization = getClientOpenAiAuthorization(request.aiSettings) || getOpenAiAuthorization();
   if (!authorization) {
     throw new Error("인공지능 설정에서 API 키를 입력하거나 서버 환경 변수를 설정해 주세요.");
-  }
-
-  if (authorization.source === "codex-oauth") {
-    return requestPatchesWithCodexCli({ ...request, model: resolveRequestModel(request) });
   }
 
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -331,6 +262,5 @@ export async function requestDocumentPatches(request: AiEditRequest): Promise<Do
   }
 
   const data = await response.json();
-  const parsed = parseJsonFromText(extractResponseText(data));
-  return parsed.patches ?? [];
+  return parseJsonFromText(extractResponseText(data)).patches ?? [];
 }
