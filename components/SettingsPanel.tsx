@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AiProvider, CodexStatus } from "../lib/useAiSettings";
 
 type SettingsPanelProps = {
@@ -32,10 +32,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
     typeof window !== "undefined" && window.localStorage.getItem(SETUP_KEY) ? "done" : "pick"
   );
 
-  function completeSetup() {
+  const completeSetup = useCallback(() => {
     window.localStorage.setItem(SETUP_KEY, "1");
     setStep("done");
-  }
+  }, []);
 
   if (step !== "done") {
     return <WizardModal step={step} setStep={setStep} completeSetup={completeSetup} {...props} />;
@@ -49,7 +49,7 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
     if (step === "oauth" && props.codexStatus?.authenticated) {
       completeSetup();
     }
-  }, [props.codexStatus?.authenticated, step]);
+  }, [props.codexStatus?.authenticated, step, completeSetup]);
 
   return (
     <div className="modalOverlay" onClick={props.onClose}>
