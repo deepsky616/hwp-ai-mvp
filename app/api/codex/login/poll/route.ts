@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pollAndCompleteLogin } from "../../../../../lib/codex-auth";
+import { getCodexAuthStatus, pollAndCompleteLogin } from "../../../../../lib/codex-auth";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -11,6 +11,11 @@ export async function GET(request: NextRequest) {
       { status: "error", error: "device_auth_id와 user_code가 필요합니다" },
       { status: 400 },
     );
+  }
+
+  const currentStatus = getCodexAuthStatus();
+  if (currentStatus.authenticated && currentStatus.source === "codex-oauth") {
+    return NextResponse.json({ status: "complete" });
   }
 
   try {
