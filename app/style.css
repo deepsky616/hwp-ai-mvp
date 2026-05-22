@@ -187,6 +187,30 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
   white-space: nowrap;
 }
 
+/* CLI 원클릭 설치 박스 */
+.cliInstallBox {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #d1fae5;
+  border-radius: 14px;
+  background: #f0fdf4;
+}
+
+.cliCode {
+  display: inline;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.07);
+  font-family: monospace;
+  font-size: 0.85em;
+  word-break: break-all;
+}
+
+.errorHint {
+  color: #b91c1c;
+}
+
 /* 에러 경계 폴백 */
 .errorFallback {
   padding: 16px;

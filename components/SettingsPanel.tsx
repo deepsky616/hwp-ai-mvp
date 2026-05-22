@@ -2,6 +2,72 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AiProvider, CodexStatus } from "../lib/useAiSettings";
 
+type CliInstallName = "codex" | "gemini";
+
+function CliInstallBox({ cliName, onInstalled }: { cliName: CliInstallName; onInstalled?: () => void }) {
+  const [phase, setPhase] = useState<"idle" | "installing" | "done" | "error">("idle");
+  const [msg, setMsg] = useState("");
+  const [isWindows, setIsWindows] = useState(false);
+
+  useEffect(() => {
+    setIsWindows(/Win/i.test(navigator.userAgent));
+  }, []);
+
+  const pkg = cliName === "codex" ? "@openai/codex" : "@google/gemini-cli";
+  const label = cliName === "codex" ? "Codex CLI" : "Gemini CLI";
+
+  const install = useCallback(async () => {
+    setPhase("installing");
+    setMsg("");
+    try {
+      const res = await fetch("/api/cli/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliName }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string };
+      if (data.ok) {
+        setPhase("done");
+        setMsg("설치가 완료되었습니다. 연결 테스트를 눌러 확인해 주세요.");
+        onInstalled?.();
+      } else {
+        setPhase("error");
+        setMsg(data.error ?? "설치에 실패했습니다.");
+      }
+    } catch {
+      setPhase("error");
+      setMsg("설치 요청 중 오류가 발생했습니다.");
+    }
+  }, [cliName, onInstalled]);
+
+  return (
+    <div className="cliInstallBox">
+      <p className="settingsHint">
+        {label}가 설치되어 있지 않으면 원클릭 설치하거나, 터미널에서 직접 설치할 수 있습니다.
+      </p>
+      <p className="settingsHint">
+        {isWindows ? "Windows — PowerShell 또는 명령 프롬프트:" : "macOS / Linux — 터미널:"}
+        {" "}<code className="cliCode">{`npm install -g ${pkg}`}</code>
+      </p>
+      {isWindows && (
+        <p className="settingsHint">
+          PowerShell 실행 정책 오류 시:{" "}
+          <code className="cliCode">Set-ExecutionPolicy RemoteSigned -Scope CurrentUser</code>
+        </p>
+      )}
+      <button
+        type="button"
+        className="secondaryButton"
+        onClick={install}
+        disabled={phase === "installing" || phase === "done"}
+      >
+        {phase === "installing" ? `${label} 설치 중...` : phase === "done" ? `${label} 설치 완료` : `${label} 원클릭 설치`}
+      </button>
+      {msg && <p className={phase === "error" ? "settingsHint errorHint" : "settingsHint"}>{msg}</p>}
+    </div>
+  );
+}
+
 type SettingsPanelProps = {
   aiProvider: AiProvider;
   setAiProvider: (p: AiProvider) => void;
@@ -142,6 +208,10 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
                 ? "터미널에서 gemini 로그인을 마친 뒤 연결 확인을 눌러 주세요."
                 : "터미널에서 codex login을 마친 뒤 연결 확인을 눌러 주세요."}
             </p>
+            <CliInstallBox
+              cliName={props.aiProvider === "gemini-cli" ? "gemini" : "codex"}
+              onInstalled={props.onTest}
+            />
             <button onClick={props.onTest} disabled={props.isPolling}>
               연결 확인
             </button>
@@ -224,14 +294,20 @@ function SettingsModal(props: SettingsPanelProps) {
           </label>
         )}
         {isCli && (
-          <div className="oauthLoginBox">
-            <button className="secondaryButton" onClick={props.onTest}>CLI 연결 테스트</button>
-            <p className="settingsHint">
-              {props.aiProvider === "gemini-cli"
-                ? "Gemini CLI 로그인을 사용합니다. 터미널에서 gemini 로그인이 먼저 완료되어야 합니다."
-                : "Codex CLI 로그인을 사용합니다. 터미널에서 codex login이 먼저 완료되어야 합니다."}
-            </p>
-          </div>
+          <>
+            <div className="oauthLoginBox">
+              <button className="secondaryButton" onClick={props.onTest}>CLI 연결 테스트</button>
+              <p className="settingsHint">
+                {props.aiProvider === "gemini-cli"
+                  ? "Gemini CLI 로그인을 사용합니다. 터미널에서 gemini 로그인이 먼저 완료되어야 합니다."
+                  : "Codex CLI 로그인을 사용합니다. 터미널에서 codex login이 먼저 완료되어야 합니다."}
+              </p>
+            </div>
+            <CliInstallBox
+              cliName={props.aiProvider === "gemini-cli" ? "gemini" : "codex"}
+              onInstalled={props.onTest}
+            />
+          </>
         )}
         {usesApiKey && (
           <label>API 키
