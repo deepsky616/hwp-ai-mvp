@@ -30,6 +30,11 @@ export type CodexStatus = {
   message: string;
 };
 
+export type GeminiLoginStatus = {
+  authenticated: boolean;
+  message: string;
+};
+
 export function useAiSettings() {
   const [aiProvider, setAiProvider] = useState<AiProvider>("openai");
   const [aiApiKey, setAiApiKey] = useState("");
@@ -45,6 +50,10 @@ export function useAiSettings() {
 
   const pollingRef = useRef<{ device_auth_id: string; user_code: string } | null>(null);
   const [isPolling, setIsPolling] = useState(false);
+
+  const [geminiLoginStatus, setGeminiLoginStatus] = useState<GeminiLoginStatus | null>(null);
+  const geminiSessionRef = useRef<{ sessionId: string } | null>(null);
+  const [isGeminiPolling, setIsGeminiPolling] = useState(false);
 
   const effectiveAiSettings = useMemo<AiSettings>(
     () => ({
@@ -73,8 +82,19 @@ export function useAiSettings() {
     }
   }, []);
 
+  const refreshGeminiStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/gemini/status");
+      const data = (await res.json()) as GeminiLoginStatus;
+      setGeminiLoginStatus(data);
+    } catch {
+      setGeminiLoginStatus({ authenticated: false, message: "Gemini 상태를 확인할 수 없습니다." });
+    }
+  }, []);
+
   useEffect(() => {
     refreshCodexSettings();
+    refreshGeminiStatus();
     const savedProvider = window.localStorage.getItem("hwp-ai-provider") as AiProvider | null;
     const savedKey = window.localStorage.getItem("hwp-ai-api-key");
     const savedUrl = window.localStorage.getItem("hwp-ai-base-url");
@@ -89,7 +109,7 @@ export function useAiSettings() {
     if (savedUrl) setAiBaseUrl(savedUrl);
     if (savedCodexPath) setCodexCliPath(savedCodexPath);
     if (savedGeminiPath) setGeminiCliPath(savedGeminiPath);
-  }, [refreshCodexSettings]);
+  }, [refreshCodexSettings, refreshGeminiStatus]);
 
   useEffect(() => {
     const next = modelsForProvider(aiProvider);
@@ -142,6 +162,55 @@ export function useAiSettings() {
     }, 5000);
     return () => clearInterval(id);
   }, [isPolling, refreshCodexSettings]);
+
+  useEffect(() => {
+    if (!isGeminiPolling) return;
+    let isRunning = false;
+    const id = setInterval(async () => {
+      const p = geminiSessionRef.current;
+      if (!p || isRunning) return;
+      isRunning = true;
+      try {
+        const res = await fetch(`/api/gemini/login/poll?session_id=${encodeURIComponent(p.sessionId)}`);
+        const data = (await res.json()) as { status: string; error?: string };
+        if (data.status === "complete") {
+          geminiSessionRef.current = null;
+          setIsGeminiPolling(false);
+          setAiTestMessage("Gemini 로그인이 완료되었습니다. 상태를 불러오는 중...");
+          await refreshGeminiStatus();
+          setAiTestMessage("Gemini 로그인이 완료되었습니다.");
+        } else if (data.status === "error") {
+          geminiSessionRef.current = null;
+          setIsGeminiPolling(false);
+          setAiTestMessage(`Gemini 로그인 오류: ${data.error ?? "다시 시도해 주세요."}`);
+        }
+      } catch {
+        // 일시적 오류 무시
+      } finally {
+        isRunning = false;
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [isGeminiPolling, refreshGeminiStatus]);
+
+  const startGeminiOauthLogin = useCallback(async () => {
+    setAiTestMessage("Google 로그인 창을 여는 중입니다...");
+    setIsGeminiPolling(false);
+    geminiSessionRef.current = null;
+    try {
+      const res = await fetch("/api/gemini/login/start", { method: "POST" });
+      const data = (await res.json()) as { authUrl?: string; sessionId?: string; error?: string };
+      if (!res.ok || !data.authUrl || !data.sessionId) {
+        throw new Error(data.error ?? "로그인 시작에 실패했습니다");
+      }
+      window.open(data.authUrl, "_blank", "width=600,height=700,popup=yes");
+      geminiSessionRef.current = { sessionId: data.sessionId };
+      setIsGeminiPolling(true);
+      setAiTestMessage("브라우저에서 Google 계정으로 로그인해 주세요. 완료 후 자동으로 감지됩니다.");
+    } catch (error) {
+      setAiTestMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
 
   const testAiSettings = useCallback(async () => {
     setAiTestMessage("연결을 확인하는 중입니다...");
@@ -223,8 +292,12 @@ export function useAiSettings() {
     setCodexCliPath,
     geminiCliPath,
     setGeminiCliPath,
+    geminiLoginStatus,
+    isGeminiPolling,
     refreshCodexSettings,
+    refreshGeminiStatus,
     testAiSettings,
     startOpenAiOauthLogin,
+    startGeminiOauthLogin,
   };
 }

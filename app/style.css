@@ -187,6 +187,13 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
   white-space: nowrap;
 }
 
+/* Gemini 로그인 버튼 행 */
+.geminiLoginRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* CLI 경로 설정 박스 */
 .cliPathBox {
   display: grid;

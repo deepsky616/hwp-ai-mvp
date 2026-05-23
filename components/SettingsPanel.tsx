@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import type { AiProvider, CodexStatus } from "../lib/useAiSettings";
+import type { AiProvider, CodexStatus, GeminiLoginStatus } from "../lib/useAiSettings";
 
 type CliInstallName = "codex" | "gemini";
 
@@ -92,9 +92,12 @@ type SettingsPanelProps = {
   setCodexCliPath: (p: string) => void;
   geminiCliPath: string;
   setGeminiCliPath: (p: string) => void;
+  geminiLoginStatus: GeminiLoginStatus | null;
+  isGeminiPolling: boolean;
   onTest: () => void;
   onRefresh: () => void;
   onOauthLogin: () => void;
+  onGeminiLogin: () => void;
   onClose: () => void;
 };
 
@@ -283,9 +286,15 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
               onInstalled={props.onTest}
               onDetected={props.aiProvider === "gemini-cli" ? props.setGeminiCliPath : props.setCodexCliPath}
             />
-            <button onClick={props.onTest} disabled={props.isPolling}>
-              연결 확인
-            </button>
+            {props.aiProvider === "gemini-cli" ? (
+              <button onClick={props.onGeminiLogin} disabled={props.isGeminiPolling}>
+                {props.isGeminiPolling ? "로그인 확인 중..." : "Google 계정으로 로그인"}
+              </button>
+            ) : (
+              <button onClick={props.onTest} disabled={props.isPolling}>
+                연결 확인
+              </button>
+            )}
             {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
             <div className="wizardActions">
               <button className="secondaryButton" onClick={() => setStep("pick")}>뒤로</button>
@@ -326,7 +335,9 @@ function SettingsModal(props: SettingsPanelProps) {
   const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli" || props.aiProvider === "openai-oauth";
   const usesFixedModelList = ["openai", "codex-cli", "gemini", "gemini-cli", "openai-oauth"].includes(props.aiProvider);
   const usesApiKey = props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom";
-  const connected = props.codexStatus?.authenticated || props.codexStatus?.source === "api-key";
+  const connected = props.aiProvider === "gemini-cli"
+    ? (props.geminiLoginStatus?.authenticated ?? false)
+    : (props.codexStatus?.authenticated || props.codexStatus?.source === "api-key");
 
   return (
     <div className="modalOverlay" onClick={props.onClose}>
@@ -371,12 +382,27 @@ function SettingsModal(props: SettingsPanelProps) {
           return (
             <>
               <div className="oauthLoginBox">
-                <button className="secondaryButton" onClick={props.onTest}>CLI 연결 테스트</button>
-                <p className="settingsHint">
-                  {props.aiProvider === "gemini-cli"
-                    ? "Gemini CLI 로그인을 사용합니다. 터미널에서 gemini 로그인이 먼저 완료되어야 합니다."
-                    : "Codex CLI 로그인을 사용합니다. 터미널에서 codex login이 먼저 완료되어야 합니다."}
-                </p>
+                {props.aiProvider === "gemini-cli" ? (
+                  <>
+                    <div className="geminiLoginRow">
+                      <button onClick={props.onGeminiLogin} disabled={props.isGeminiPolling}>
+                        {props.isGeminiPolling ? "로그인 확인 중..." : "Google 계정으로 로그인"}
+                      </button>
+                      <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
+                    </div>
+                    {props.geminiLoginStatus && (
+                      <p className="settingsHint">
+                        <span className={props.geminiLoginStatus.authenticated ? "statusDot good" : "statusDot warn"} />
+                        {props.geminiLoginStatus.message}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button className="secondaryButton" onClick={props.onTest}>CLI 연결 테스트</button>
+                    <p className="settingsHint">Codex CLI 로그인을 사용합니다. 터미널에서 codex login이 먼저 완료되어야 합니다.</p>
+                  </>
+                )}
               </div>
               <CliInstallBox
                 cliName={cliName}
