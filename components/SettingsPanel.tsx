@@ -276,11 +276,6 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
         {step === "oauth" && (
           <>
             <h2>{props.aiProvider === "gemini-cli" ? "Gemini CLI 로그인" : "Codex CLI 로그인"}</h2>
-            <p className="settingsHint">
-              {props.aiProvider === "gemini-cli"
-                ? "터미널에서 gemini 로그인을 마친 뒤 연결 확인을 눌러 주세요."
-                : "터미널에서 codex login을 마친 뒤 연결 확인을 눌러 주세요."}
-            </p>
             <CliInstallBox
               cliName={props.aiProvider === "gemini-cli" ? "gemini" : "codex"}
               onInstalled={props.onTest}
@@ -291,9 +286,14 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
                 {props.isGeminiPolling ? "로그인 확인 중..." : "Google 계정으로 로그인"}
               </button>
             ) : (
-              <button onClick={props.onTest} disabled={props.isPolling}>
-                연결 확인
+              <button onClick={props.onOauthLogin} disabled={props.isPolling}>
+                {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
               </button>
+            )}
+            {props.oauthLoginCode && props.aiProvider !== "gemini-cli" && (
+              <p className="settingsHint">
+                로그인 창에서 코드 <strong>{props.oauthLoginCode}</strong>를 입력해 주세요.
+              </p>
             )}
             {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
             <div className="wizardActions">
@@ -399,8 +399,23 @@ function SettingsModal(props: SettingsPanelProps) {
                   </>
                 ) : (
                   <>
-                    <button className="secondaryButton" onClick={props.onTest}>CLI 연결 테스트</button>
-                    <p className="settingsHint">Codex CLI 로그인을 사용합니다. 터미널에서 codex login이 먼저 완료되어야 합니다.</p>
+                    <div className="geminiLoginRow">
+                      <button onClick={props.onOauthLogin} disabled={props.isPolling}>
+                        {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
+                      </button>
+                      <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
+                    </div>
+                    {props.codexStatus && (
+                      <p className="settingsHint">
+                        <span className={props.codexStatus.authenticated ? "statusDot good" : "statusDot warn"} />
+                        {props.codexStatus.message}
+                      </p>
+                    )}
+                    {props.oauthLoginCode && (
+                      <p className="settingsHint">
+                        로그인 창에서 코드 <strong>{props.oauthLoginCode}</strong>를 입력해 주세요.
+                      </p>
+                    )}
                   </>
                 )}
               </div>
