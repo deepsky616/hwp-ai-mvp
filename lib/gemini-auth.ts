@@ -1,8 +1,17 @@
 import { createServer } from "node:http";
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
+import { createRequire } from "node:module";
+
+const nodeRequire = createRequire(import.meta.url);
+
+function fsModule(): typeof import("node:fs") {
+  return nodeRequire("node:fs") as typeof import("node:fs");
+}
+
+function osModule(): typeof import("node:os") {
+  return nodeRequire("node:os") as typeof import("node:os");
+}
 
 const GEMINI_DIR = ".gemini";
 const OAUTH_SCOPES = [
@@ -17,7 +26,7 @@ const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 // 환경 변수 GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET 으로 재정의 가능합니다.
 
 function findGeminiBundleDir(): string | null {
-  const home = homedir();
+  const home = osModule().homedir();
   const candidates: string[] = [
     join(home, ".npm-global", "lib", "node_modules", "@google", "gemini-cli", "bundle"),
     join(home, ".local", "lib", "node_modules", "@google", "gemini-cli", "bundle"),
@@ -36,7 +45,7 @@ function findGeminiBundleDir(): string | null {
   }
   for (const dir of candidates) {
     try {
-      if (statSync(join(dir, "gemini.js")).isFile()) return dir;
+      if (fsModule().statSync(join(dir, "gemini.js")).isFile()) return dir;
     } catch {
       // not found
     }
@@ -46,9 +55,9 @@ function findGeminiBundleDir(): string | null {
 
 function extractCredentialsFromBundle(bundleDir: string): { clientId: string; clientSecret: string } | null {
   try {
-    const files = readdirSync(bundleDir).filter((f) => f.endsWith(".js"));
+    const files = fsModule().readdirSync(bundleDir).filter((f) => f.endsWith(".js"));
     for (const file of files) {
-      const content = readFileSync(join(bundleDir, file), "utf-8");
+      const content = fsModule().readFileSync(join(bundleDir, file), "utf-8");
       const idMatch = content.match(/OAUTH_CLIENT_ID\s*=\s*"([^"]+googleusercontent\.com[^"]*)"/);
       const secretMatch = content.match(/OAUTH_CLIENT_SECRET\s*=\s*"(GOCSPX-[^"]*)"/);
       if (idMatch?.[1] && secretMatch?.[1]) {
@@ -81,7 +90,7 @@ function getOAuthCredentials(): { clientId: string; clientSecret: string } {
 // ─── 인증 상태 ────────────────────────────────────────────────────────────
 
 function getCredentialsPath(): string {
-  return join(homedir(), GEMINI_DIR, "oauth_creds.json");
+  return join(osModule().homedir(), GEMINI_DIR, "oauth_creds.json");
 }
 
 function generateCodeVerifier(): string {
@@ -99,7 +108,7 @@ export type GeminiAuthStatus = {
 
 export function getGeminiAuthStatus(): GeminiAuthStatus {
   try {
-    const raw = readFileSync(getCredentialsPath(), "utf-8");
+    const raw = fsModule().readFileSync(getCredentialsPath(), "utf-8");
     const creds = JSON.parse(raw) as Record<string, unknown>;
     if (creds.refresh_token || creds.access_token) {
       return { authenticated: true, message: "Gemini CLI 로그인이 완료된 상태입니다." };
@@ -143,9 +152,9 @@ async function exchangeCodeForTokens(
   }
 
   const tokens = (await res.json()) as Record<string, unknown>;
-  const credDir = join(homedir(), GEMINI_DIR);
-  mkdirSync(credDir, { recursive: true });
-  writeFileSync(join(credDir, "oauth_creds.json"), JSON.stringify(tokens, null, 2), "utf-8");
+  const credDir = join(osModule().homedir(), GEMINI_DIR);
+  fsModule().mkdirSync(credDir, { recursive: true });
+  fsModule().writeFileSync(join(credDir, "oauth_creds.json"), JSON.stringify(tokens, null, 2), "utf-8");
 }
 
 export async function startGeminiLogin(): Promise<{ authUrl: string; sessionId: string }> {
