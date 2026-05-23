@@ -65,8 +65,9 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload artifacts to draft release
-        run: gh release upload ${{ github.ref_name }} ${{ matrix.artifact_glob }} --clobber
+        run: gh release upload ${{ github.ref_name }} ${{ matrix.artifact_glob }} --repo ${{ github.repository }} --clobber
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-release:
