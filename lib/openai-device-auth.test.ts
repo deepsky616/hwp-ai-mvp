@@ -106,7 +106,7 @@ describe("saveAuthTokens", () => {
     process.env.CODEX_AUTH_FILE = tmpFile;
     saveAuthTokens({ access_token: "at-1", refresh_token: "rt-1", id_token: "it-1" });
     const saved = JSON.parse(readFileSync(tmpFile, "utf-8"));
-    expect(saved.auth_mode).toBe("ChatGpt");
+    expect(saved.auth_mode).toBe("chatgpt");
     expect(saved.tokens.access_token).toBe("at-1");
     expect(saved.tokens.refresh_token).toBe("rt-1");
     expect(saved.tokens.id_token).toBe("it-1");

@@ -107,7 +107,7 @@ export function saveAuthTokens(tokens: OAuthTokens): void {
   mkdirSync(dirname(authFile), { recursive: true });
 
   const payload = {
-    auth_mode: "ChatGpt",
+    auth_mode: "chatgpt",
     last_refresh: new Date().toISOString(),
     tokens: {
       access_token: tokens.access_token,
