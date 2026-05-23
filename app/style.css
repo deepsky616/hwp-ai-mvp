@@ -118,22 +118,29 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
 .modalOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  padding: 16px;
 }
 
 .modalCard {
-  background: var(--surface, #fff);
-  border-radius: 12px;
-  padding: 28px 24px;
-  width: min(480px, 92vw);
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  width: min(480px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  gap: 16px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.20);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.settingsCard--wide {
+  width: min(580px, 100%);
 }
 
 .modalHeader {
@@ -141,6 +148,154 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
   justify-content: space-between;
   align-items: center;
 }
+
+/* 상태 바 */
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.statusBar--ok  { background: #ecfdf5; color: #065f46; }
+.statusBar--warn { background: #fff7ed; color: #9a3412; }
+.statusBarText { flex: 1; min-width: 0; }
+.statusBarMeta { font-weight: 700; white-space: nowrap; color: inherit; opacity: 0.7; }
+
+/* 섹션 */
+.settingSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.settingSectionLabel {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.settingLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.settingInput {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+/* 제공자 그리드 (마법사) */
+.providerGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.providerCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, background .15s;
+}
+.providerCard:hover { background: #eff6ff; border-color: #93c5fd; }
+.providerCard.active { background: #eff6ff; border-color: var(--accent); }
+.providerCardLabel { font-weight: 700; font-size: 14px; }
+.providerCardBadge { font-size: 11px; color: var(--muted); font-weight: 600; }
+
+/* 제공자 필 (설정 모달) */
+.providerPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.providerPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 11px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.providerPill:hover { background: #eff6ff; border-color: #93c5fd; }
+.providerPill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.providerPill.active .pillBadge { color: rgba(255,255,255,.75); }
+.pillBadge { font-size: 10px; font-weight: 600; color: var(--muted); }
+
+/* 모델 선택기 */
+.modelPicker { display: flex; flex-direction: column; gap: 6px; }
+.modelPicker select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+/* 연결 행 */
+.connectionRow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.connectionRow button { white-space: nowrap; }
+
+/* 고급 토글 */
+.advancedToggle {
+  align-self: flex-start;
+  padding: 6px 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.advancedToggle:hover { color: var(--ink); background: none; }
+.advancedBox { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: #f8fafc; }
+
+/* 뒤로 링크 */
+.backLink {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.backLink:hover { background: none; text-decoration: underline; }
+
+/* 설정 하단 */
+.settingsFooter { display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 14px; }
+.smallBtn { font-size: 12px; padding: 8px 12px; }
 
 /* 온보딩 마법사 */
 .wizardActions {

@@ -4,14 +4,18 @@ import type { AiProvider, CodexStatus, GeminiLoginStatus } from "../lib/useAiSet
 
 type CliInstallName = "codex" | "gemini";
 
-function CliInstallBox({ cliName, onInstalled, onDetected }: { cliName: CliInstallName; onInstalled?: () => void; onDetected?: (path: string) => void }) {
+// ─── 공통 서브컴포넌트 ───────────────────────────────────────────────────────
+
+function CliInstallBox({ cliName, onInstalled, onDetected }: {
+  cliName: CliInstallName;
+  onInstalled?: () => void;
+  onDetected?: (path: string) => void;
+}) {
   const [phase, setPhase] = useState<"idle" | "installing" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
   const [isWindows, setIsWindows] = useState(false);
 
-  useEffect(() => {
-    setIsWindows(/Win/i.test(navigator.userAgent));
-  }, []);
+  useEffect(() => { setIsWindows(/Win/i.test(navigator.userAgent)); }, []);
 
   const pkg = cliName === "codex" ? "@openai/codex" : "@google/gemini-cli";
   const label = cliName === "codex" ? "Codex CLI" : "Gemini CLI";
@@ -48,16 +52,12 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: { cliName: CliInsta
   return (
     <div className="cliInstallBox">
       <p className="settingsHint">
-        {label}가 설치되어 있지 않으면 원클릭 설치하거나, 터미널에서 직접 설치할 수 있습니다.
-      </p>
-      <p className="settingsHint">
-        {isWindows ? "Windows — PowerShell 또는 명령 프롬프트:" : "macOS / Linux — 터미널:"}
-        {" "}<code className="cliCode">{`npm install -g ${pkg}`}</code>
+        {isWindows ? "PowerShell:" : "터미널:"}{" "}
+        <code className="cliCode">{`npm install -g ${pkg}`}</code>
       </p>
       {isWindows && (
         <p className="settingsHint">
-          PowerShell 실행 정책 오류 시:{" "}
-          <code className="cliCode">Set-ExecutionPolicy RemoteSigned -Scope CurrentUser</code>
+          실행 정책 오류 시: <code className="cliCode">Set-ExecutionPolicy RemoteSigned -Scope CurrentUser</code>
         </p>
       )}
       <button
@@ -72,6 +72,151 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: { cliName: CliInsta
     </div>
   );
 }
+
+function CliPathBox({ cliName, path, setPath, onDetected }: {
+  cliName: CliInstallName;
+  path: string;
+  setPath: (p: string) => void;
+  onDetected?: () => void;
+}) {
+  const [detecting, setDetecting] = useState(false);
+  const [detectMsg, setDetectMsg] = useState("");
+
+  const detect = useCallback(async () => {
+    setDetecting(true);
+    setDetectMsg("");
+    try {
+      const res = await fetch(`/api/cli/detect?name=${cliName}`);
+      const data = (await res.json()) as { found: boolean; path: string | null };
+      if (data.found && data.path) {
+        setPath(data.path);
+        setDetectMsg(`감지됨: ${data.path}`);
+        onDetected?.();
+      } else {
+        setDetectMsg("자동 감지 실패 — 경로를 직접 입력해 주세요.");
+      }
+    } catch {
+      setDetectMsg("감지 요청 중 오류가 발생했습니다.");
+    } finally {
+      setDetecting(false);
+    }
+  }, [cliName, setPath, onDetected]);
+
+  const placeholder = cliName === "codex" ? "/usr/local/bin/codex" : "/usr/local/bin/gemini";
+
+  return (
+    <div className="cliPathBox">
+      <label>
+        실행 파일 경로
+        <div className="cliPathRow">
+          <input value={path} onChange={(e) => setPath(e.target.value)} placeholder={placeholder} />
+          <button type="button" className="secondaryButton" onClick={detect} disabled={detecting}>
+            {detecting ? "탐색 중..." : "자동 감지"}
+          </button>
+        </div>
+      </label>
+      {detectMsg && (
+        <p className={detectMsg.startsWith("감지됨") ? "settingsHint" : "settingsHint errorHint"}>{detectMsg}</p>
+      )}
+    </div>
+  );
+}
+
+function OAuthCodeField({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const copyCode = useCallback(async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const el = document.createElement("input");
+        el.value = code;
+        el.style.cssText = "position:fixed;opacity:0";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch { /* ignore */ }
+  }, [code]);
+
+  return (
+    <div className="oauthCodeBox">
+      <label htmlFor="oauth-code-input">인증 코드</label>
+      <div className="oauthCodeRow">
+        <input
+          id="oauth-code-input"
+          readOnly
+          value={code}
+          onFocus={(e) => e.currentTarget.select()}
+          onClick={(e) => e.currentTarget.select()}
+        />
+        <button type="button" className="secondaryButton" onClick={copyCode}>
+          {copied ? "복사됨" : "복사"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── 모델 선택기 ─────────────────────────────────────────────────────────────
+
+function ModelPicker({ models, value, onChange }: {
+  models: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const inList = models.includes(value);
+  const [useCustom, setUseCustom] = useState(models.length > 0 && !inList);
+
+  useEffect(() => {
+    if (models.includes(value)) setUseCustom(false);
+  }, [models, value]);
+
+  if (models.length === 0) {
+    return (
+      <input
+        className="settingInput"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="모델명 (예: llama3.2)"
+      />
+    );
+  }
+
+  return (
+    <div className="modelPicker">
+      <select
+        value={useCustom ? "__custom__" : value}
+        onChange={(e) => {
+          if (e.target.value === "__custom__") {
+            setUseCustom(true);
+            onChange("");
+          } else {
+            setUseCustom(false);
+            onChange(e.target.value);
+          }
+        }}
+      >
+        {models.map((m) => <option key={m} value={m}>{m}</option>)}
+        <option value="__custom__">직접 입력...</option>
+      </select>
+      {useCustom && (
+        <input
+          className="settingInput"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="모델명"
+          autoFocus
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Props 타입 ───────────────────────────────────────────────────────────────
 
 type SettingsPanelProps = {
   aiProvider: AiProvider;
@@ -101,73 +246,24 @@ type SettingsPanelProps = {
   onClose: () => void;
 };
 
-function CliPathBox({
-  cliName,
-  path,
-  setPath,
-  onDetected,
-}: {
-  cliName: CliInstallName;
-  path: string;
-  setPath: (p: string) => void;
-  onDetected?: () => void;
-}) {
-  const [detecting, setDetecting] = useState(false);
-  const [detectMsg, setDetectMsg] = useState("");
+// ─── 제공자 메타데이터 ────────────────────────────────────────────────────────
 
-  const detect = useCallback(async () => {
-    setDetecting(true);
-    setDetectMsg("");
-    try {
-      const res = await fetch(`/api/cli/detect?name=${cliName}`);
-      const data = (await res.json()) as { found: boolean; path: string | null };
-      if (data.found && data.path) {
-        setPath(data.path);
-        setDetectMsg(`감지됨: ${data.path}`);
-        onDetected?.();
-      } else {
-        setDetectMsg("자동 감지 실패 — 경로를 직접 입력해 주세요.");
-      }
-    } catch {
-      setDetectMsg("감지 요청 중 오류가 발생했습니다.");
-    } finally {
-      setDetecting(false);
-    }
-  }, [cliName, setPath, onDetected]);
+const PROVIDERS: { id: AiProvider; label: string; badge: string }[] = [
+  { id: "codex-cli",  label: "Codex CLI",  badge: "OpenAI 구독" },
+  { id: "gemini-cli", label: "Gemini CLI", badge: "Google 구독" },
+  { id: "openai",     label: "OpenAI",     badge: "API 키" },
+  { id: "gemini",     label: "Gemini",     badge: "API 키" },
+  { id: "ollama",     label: "Ollama",     badge: "로컬" },
+  { id: "mlx",        label: "MLX",        badge: "로컬" },
+  { id: "custom",     label: "커스텀",     badge: "직접 입력" },
+];
 
-  const label = cliName === "codex" ? "Codex CLI" : "Gemini CLI";
-  const placeholder = cliName === "codex" ? "/usr/local/bin/codex" : "/usr/local/bin/gemini";
-
-  return (
-    <div className="cliPathBox">
-      <label>
-        {label} 실행 파일 경로
-        <div className="cliPathRow">
-          <input
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder={placeholder}
-          />
-          <button type="button" className="secondaryButton" onClick={detect} disabled={detecting}>
-            {detecting ? "탐색 중..." : "자동 감지"}
-          </button>
-        </div>
-      </label>
-      {detectMsg && (
-        <p className={detectMsg.startsWith("감지됨") ? "settingsHint" : "settingsHint errorHint"}>
-          {detectMsg}
-        </p>
-      )}
-    </div>
-  );
-}
-
-type WizardStep = "pick" | "apikey" | "oauth" | "local" | "done";
+// ─── 진입점 ───────────────────────────────────────────────────────────────────
 
 const SETUP_KEY = "hwp-ai-setup-complete";
 
 export function SettingsPanel(props: SettingsPanelProps) {
-  const [step, setStep] = useState<WizardStep>(() =>
+  const [step, setStep] = useState<"pick" | "detail" | "done">(() =>
     typeof window !== "undefined" && window.localStorage.getItem(SETUP_KEY) ? "done" : "pick"
   );
 
@@ -180,150 +276,141 @@ export function SettingsPanel(props: SettingsPanelProps) {
     return <WizardModal step={step} setStep={setStep} completeSetup={completeSetup} {...props} />;
   }
 
-  return <SettingsModal {...props} />;
+  return <SettingsModal onResetSetup={() => setStep("pick")} {...props} />;
 }
 
-function OAuthCodeField({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
+// ─── 마법사 모달 ─────────────────────────────────────────────────────────────
 
-  const copyCode = useCallback(async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(code);
-      } else {
-        const input = document.createElement("input");
-        input.value = code;
-        input.setAttribute("readonly", "true");
-        input.style.position = "fixed";
-        input.style.opacity = "0";
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand("copy");
-        document.body.removeChild(input);
-      }
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
-  }, [code]);
+function WizardModal({
+  step, setStep, completeSetup, ...props
+}: { step: "pick" | "detail"; setStep: (s: "pick" | "detail") => void; completeSetup: () => void } & SettingsPanelProps) {
+  const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli";
+  const isApi = props.aiProvider === "openai" || props.aiProvider === "gemini";
+  const isLocal = props.aiProvider === "ollama" || props.aiProvider === "mlx" || props.aiProvider === "custom";
 
-  return (
-    <div className="oauthCodeBox">
-      <label htmlFor="oauth-code-input">코드</label>
-      <div className="oauthCodeRow">
-        <input
-          id="oauth-code-input"
-          readOnly
-          value={code}
-          onFocus={(event) => event.currentTarget.select()}
-          onClick={(event) => event.currentTarget.select()}
-          aria-label="OpenAI 로그인 코드"
-        />
-        <button type="button" className="secondaryButton" onClick={copyCode}>
-          {copied ? "복사됨" : "코드 복사"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardStep; setStep: (s: WizardStep) => void; completeSetup: () => void } & SettingsPanelProps) {
   useEffect(() => {
-    if (step === "oauth" && props.codexStatus?.authenticated) {
-      completeSetup();
+    if (step === "detail" && isCli) {
+      const authed =
+        props.aiProvider === "gemini-cli"
+          ? props.geminiLoginStatus?.authenticated
+          : props.codexStatus?.authenticated;
+      if (authed) completeSetup();
     }
-  }, [props.codexStatus?.authenticated, step, completeSetup]);
+  }, [props.codexStatus?.authenticated, props.geminiLoginStatus?.authenticated, step, isCli, props.aiProvider, completeSetup]);
+
+  const cliName: CliInstallName = props.aiProvider === "gemini-cli" ? "gemini" : "codex";
 
   return (
     <div className="modalOverlay" onClick={props.onClose}>
-      <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+      <div className="modalCard settingsCard--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modalHeader">
-          <span />
-          <button className="iconButton" onClick={props.onClose}>x</button>
+          <strong>AI 연결 설정</strong>
+          <button className="iconButton" onClick={props.onClose}>✕</button>
         </div>
+
         {step === "pick" && (
           <>
-            <h2>OpenAI를 어떻게 사용하시나요?</h2>
-            <button onClick={() => { props.setAiProvider("openai"); setStep("apikey"); }}>
-              API 키가 있습니다
-            </button>
-            <button onClick={() => { props.setAiProvider("codex-cli"); setStep("oauth"); }}>
-              Codex CLI 로그인 사용
-            </button>
-            <button onClick={() => { props.setAiProvider("gemini"); setStep("apikey"); }}>
-              Gemini API 키가 있습니다
-            </button>
-            <button onClick={() => { props.setAiProvider("gemini-cli"); setStep("oauth"); }}>
-              Gemini CLI 로그인 사용
-            </button>
-            <button onClick={() => { props.setAiProvider("ollama"); setStep("local"); }}>
-              로컬 AI 사용 (Ollama / MLX)
-            </button>
-          </>
-        )}
-        {step === "apikey" && (
-          <>
-            <h2>API 키를 입력해 주세요</h2>
-            <input type="password" value={props.aiApiKey} onChange={(e) => props.setAiApiKey(e.target.value)} placeholder={props.aiProvider === "gemini" ? "Gemini API 키" : "sk-..."} autoFocus />
-            <div className="wizardActions">
-              <button className="secondaryButton" onClick={() => setStep("pick")}>뒤로</button>
-              <button onClick={async () => { await props.onTest(); completeSetup(); }}>연결 확인 후 시작</button>
+            <p className="settingsHint" style={{ margin: 0 }}>사용할 AI 제공자를 선택하세요.</p>
+            <div className="providerGrid">
+              {PROVIDERS.map(({ id, label, badge }) => (
+                <button
+                  key={id}
+                  className={`providerCard${props.aiProvider === id ? " active" : ""}`}
+                  onClick={() => { props.setAiProvider(id); setStep("detail"); }}
+                >
+                  <span className="providerCardLabel">{label}</span>
+                  <span className="providerCardBadge">{badge}</span>
+                </button>
+              ))}
             </div>
-            {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
           </>
         )}
-        {step === "oauth" && (
+
+        {step === "detail" && (
           <>
-            <h2>{props.aiProvider === "gemini-cli" ? "Gemini CLI 로그인" : "Codex CLI 로그인"}</h2>
-            <CliInstallBox
-              cliName={props.aiProvider === "gemini-cli" ? "gemini" : "codex"}
-              onInstalled={props.onTest}
-              onDetected={props.aiProvider === "gemini-cli" ? props.setGeminiCliPath : props.setCodexCliPath}
-            />
-            {props.aiProvider === "gemini-cli" ? (
-              <button onClick={props.onGeminiLogin} disabled={props.isGeminiPolling}>
-                {props.isGeminiPolling ? "로그인 확인 중..." : "Google 계정으로 로그인"}
+            <div className="settingSection">
+              <button
+                className="backLink"
+                onClick={() => setStep("pick")}
+              >
+                ← {PROVIDERS.find((p) => p.id === props.aiProvider)?.label}
               </button>
-            ) : (
-              <button onClick={props.onOauthLogin} disabled={props.isPolling}>
-                {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
+
+              {/* CLI 제공자 */}
+              {isCli && (
+                <>
+                  <CliInstallBox
+                    cliName={cliName}
+                    onInstalled={props.onTest}
+                    onDetected={cliName === "gemini" ? props.setGeminiCliPath : props.setCodexCliPath}
+                  />
+                  {props.aiProvider === "gemini-cli" ? (
+                    <button onClick={props.onGeminiLogin} disabled={props.isGeminiPolling}>
+                      {props.isGeminiPolling ? "로그인 확인 중..." : "Google 계정으로 로그인"}
+                    </button>
+                  ) : (
+                    <button onClick={props.onOauthLogin} disabled={props.isPolling}>
+                      {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
+                    </button>
+                  )}
+                  {props.oauthLoginCode && props.aiProvider !== "gemini-cli" && (
+                    <OAuthCodeField code={props.oauthLoginCode} />
+                  )}
+                </>
+              )}
+
+              {/* API 키 제공자 */}
+              {isApi && (
+                <>
+                  <label className="settingLabel">
+                    API 키
+                    <input
+                      type="password"
+                      className="settingInput"
+                      value={props.aiApiKey}
+                      onChange={(e) => props.setAiApiKey(e.target.value)}
+                      placeholder={props.aiProvider === "gemini" ? "Gemini API 키" : "sk-..."}
+                      autoFocus
+                    />
+                  </label>
+                </>
+              )}
+
+              {/* 로컬 제공자 */}
+              {isLocal && (
+                <>
+                  <label className="settingLabel">
+                    서버 주소
+                    <input
+                      className="settingInput"
+                      value={props.aiBaseUrl}
+                      onChange={(e) => props.setAiBaseUrl(e.target.value)}
+                      placeholder="http://localhost:11434"
+                    />
+                  </label>
+                  <label className="settingLabel">
+                    모델명
+                    <input
+                      className="settingInput"
+                      value={props.selectedModel}
+                      onChange={(e) => props.setSelectedModel(e.target.value)}
+                      placeholder="llama3.2"
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+
+            {props.aiTestMessage && (
+              <p className="settingsHint">{props.aiTestMessage}</p>
+            )}
+
+            <div className="wizardActions">
+              <button className="secondaryButton" onClick={async () => { await props.onTest(); completeSetup(); }}>
+                연결 확인 후 시작
               </button>
-            )}
-            {props.oauthLoginCode && props.aiProvider !== "gemini-cli" && (
-              <p className="settingsHint">
-                로그인 창에서 코드 <strong>{props.oauthLoginCode}</strong>를 입력해 주세요.
-              </p>
-            )}
-            {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
-            <div className="wizardActions">
-              <button className="secondaryButton" onClick={() => setStep("pick")}>뒤로</button>
-              <button onClick={async () => {
-                await props.onRefresh();
-                if (props.codexStatus?.authenticated) {
-                  completeSetup();
-                } else {
-                  alert("로그인이 확인되지 않았습니다. 로그인 창에서 코드를 입력한 뒤 다시 시도해 주세요.");
-                }
-              }}>로그인 완료 — 시작하기</button>
+              <button className="secondaryButton" onClick={completeSetup}>건너뛰기</button>
             </div>
-          </>
-        )}
-        {step === "local" && (
-          <>
-            <h2>로컬 AI 서버 주소</h2>
-            <select value={props.aiProvider} onChange={(e) => props.setAiProvider(e.target.value as AiProvider)}>
-              <option value="ollama">Ollama</option>
-              <option value="mlx">MLX</option>
-              <option value="custom">직접 입력</option>
-            </select>
-            <input value={props.aiBaseUrl} onChange={(e) => props.setAiBaseUrl(e.target.value)} placeholder="http://localhost:11434" />
-            <input value={props.selectedModel} onChange={(e) => props.setSelectedModel(e.target.value)} placeholder="모델명" />
-            <div className="wizardActions">
-              <button className="secondaryButton" onClick={() => setStep("pick")}>뒤로</button>
-              <button onClick={async () => { await props.onTest(); completeSetup(); }}>연결 확인 후 시작</button>
-            </div>
-            {props.aiTestMessage && <p className="settingsHint">{props.aiTestMessage}</p>}
           </>
         )}
       </div>
@@ -331,116 +418,177 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
   );
 }
 
-function SettingsModal(props: SettingsPanelProps) {
+// ─── 설정 모달 ───────────────────────────────────────────────────────────────
+
+function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onResetSetup: () => void }) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli" || props.aiProvider === "openai-oauth";
-  const usesFixedModelList = ["openai", "codex-cli", "gemini", "gemini-cli", "openai-oauth"].includes(props.aiProvider);
+  const isLocal = props.aiProvider === "ollama" || props.aiProvider === "mlx" || props.aiProvider === "custom";
   const usesApiKey = props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom";
-  const connected = props.aiProvider === "gemini-cli"
-    ? (props.geminiLoginStatus?.authenticated ?? false)
-    : (props.codexStatus?.authenticated || props.codexStatus?.source === "api-key");
+  const cliName: CliInstallName = props.aiProvider === "gemini-cli" ? "gemini" : "codex";
+
+  const isConnected =
+    props.aiProvider === "gemini-cli"
+      ? (props.geminiLoginStatus?.authenticated ?? false)
+      : props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom"
+        ? !!props.aiApiKey
+        : (props.codexStatus?.authenticated ?? false);
+
+  const statusText =
+    props.aiTestMessage ||
+    (props.aiProvider === "gemini-cli"
+      ? (props.geminiLoginStatus?.message ?? "상태 확인 중...")
+      : (props.codexStatus?.message ?? "상태 확인 중..."));
 
   return (
     <div className="modalOverlay" onClick={props.onClose}>
-      <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+      <div className="modalCard settingsCard--wide" onClick={(e) => e.stopPropagation()}>
+
+        {/* 헤더 */}
         <div className="modalHeader">
-          <strong>인공지능 설정</strong>
-          <button className="iconButton" onClick={props.onClose}>x</button>
+          <strong>AI 설정</strong>
+          <button className="iconButton" onClick={props.onClose}>✕</button>
         </div>
-        <div>
-          <span className={connected || props.aiApiKey ? "statusDot good" : "statusDot warn"} />
-          {props.aiTestMessage || props.codexStatus?.message || "인공지능 설정을 확인하는 중입니다."}
+
+        {/* 상태 바 */}
+        <div className={`statusBar${isConnected ? " statusBar--ok" : " statusBar--warn"}`}>
+          <span className={`statusDot ${isConnected ? "good" : "warn"}`} />
+          <span className="statusBarText">{statusText}</span>
+          <span className="statusBarMeta">
+            {PROVIDERS.find((p) => p.id === props.aiProvider)?.label}
+            {props.selectedModel ? ` · ${props.selectedModel}` : ""}
+          </span>
         </div>
-        <label>제공자
-          <select value={props.aiProvider} onChange={(e) => props.setAiProvider(e.target.value as AiProvider)}>
-            <option value="openai">OpenAI API 키</option>
-            <option value="codex-cli">Codex CLI 로그인</option>
-            <option value="gemini">Gemini API 키</option>
-            <option value="gemini-cli">Gemini CLI 로그인</option>
-            <option value="ollama">로컬 Ollama</option>
-            <option value="mlx">로컬 MLX 서버</option>
-            <option value="custom">직접 입력 서버</option>
-          </select>
-        </label>
-        <label>모델
-          {usesFixedModelList ? (
-            <select value={props.selectedModel} onChange={(e) => props.setSelectedModel(e.target.value)}>
-              {props.models.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          ) : (
-            <input value={props.selectedModel} onChange={(e) => props.setSelectedModel(e.target.value)} placeholder="모델명" />
-          )}
-        </label>
-        {!isCli && props.aiProvider !== "openai" && props.aiProvider !== "gemini" && (
-          <label>서버 주소
-            <input value={props.aiBaseUrl} onChange={(e) => props.setAiBaseUrl(e.target.value)} placeholder="http://localhost:11434" />
-          </label>
-        )}
-        {isCli && (() => {
-          const cliName: CliInstallName = props.aiProvider === "gemini-cli" ? "gemini" : "codex";
-          const cliPath = cliName === "gemini" ? props.geminiCliPath : props.codexCliPath;
-          const setCliPath = cliName === "gemini" ? props.setGeminiCliPath : props.setCodexCliPath;
-          return (
-            <>
-              <div className="oauthLoginBox">
-                {props.aiProvider === "gemini-cli" ? (
-                  <>
-                    <div className="geminiLoginRow">
-                      <button onClick={props.onGeminiLogin} disabled={props.isGeminiPolling}>
-                        {props.isGeminiPolling ? "로그인 확인 중..." : "Google 계정으로 로그인"}
-                      </button>
-                      <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
-                    </div>
-                    {props.geminiLoginStatus && (
-                      <p className="settingsHint">
-                        <span className={props.geminiLoginStatus.authenticated ? "statusDot good" : "statusDot warn"} />
-                        {props.geminiLoginStatus.message}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="geminiLoginRow">
-                      <button onClick={props.onOauthLogin} disabled={props.isPolling}>
-                        {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
-                      </button>
-                      <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
-                    </div>
-                    {props.codexStatus && (
-                      <p className="settingsHint">
-                        <span className={props.codexStatus.authenticated ? "statusDot good" : "statusDot warn"} />
-                        {props.codexStatus.message}
-                      </p>
-                    )}
-                    {props.oauthLoginCode && (
-                      <p className="settingsHint">
-                        로그인 창에서 코드 <strong>{props.oauthLoginCode}</strong>를 입력해 주세요.
-                      </p>
-                    )}
-                  </>
+
+        {/* 제공자 선택 */}
+        <div className="settingSection">
+          <p className="settingSectionLabel">제공자</p>
+          <div className="providerPills">
+            {PROVIDERS.map(({ id, label, badge }) => (
+              <button
+                key={id}
+                className={`providerPill${props.aiProvider === id ? " active" : ""}`}
+                onClick={() => props.setAiProvider(id)}
+              >
+                {label}
+                <span className="pillBadge">{badge}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 모델 선택 */}
+        <div className="settingSection">
+          <p className="settingSectionLabel">모델</p>
+          <ModelPicker
+            models={props.models}
+            value={props.selectedModel}
+            onChange={props.setSelectedModel}
+          />
+        </div>
+
+        {/* 연결 설정 — CLI */}
+        {isCli && (
+          <div className="settingSection">
+            <p className="settingSectionLabel">로그인</p>
+            {props.aiProvider === "gemini-cli" ? (
+              <>
+                <div className="connectionRow">
+                  <button onClick={props.onGeminiLogin} disabled={props.isGeminiPolling}>
+                    {props.isGeminiPolling ? "확인 중..." : "Google 계정으로 로그인"}
+                  </button>
+                  <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
+                </div>
+                {props.geminiLoginStatus && (
+                  <p className="settingsHint">
+                    <span className={`statusDot ${props.geminiLoginStatus.authenticated ? "good" : "warn"}`} />
+                    {props.geminiLoginStatus.message}
+                  </p>
                 )}
+              </>
+            ) : (
+              <>
+                <div className="connectionRow">
+                  <button onClick={props.onOauthLogin} disabled={props.isPolling}>
+                    {props.isPolling ? "확인 중..." : "OpenAI 계정으로 로그인"}
+                  </button>
+                  <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
+                </div>
+                {props.codexStatus && (
+                  <p className="settingsHint">
+                    <span className={`statusDot ${props.codexStatus.authenticated ? "good" : "warn"}`} />
+                    {props.codexStatus.message}
+                  </p>
+                )}
+                {props.oauthLoginCode && <OAuthCodeField code={props.oauthLoginCode} />}
+              </>
+            )}
+
+            {/* 고급: CLI 경로 */}
+            <button
+              className="advancedToggle"
+              onClick={() => setShowAdvanced((v) => !v)}
+            >
+              {showAdvanced ? "▲ 고급 설정 숨기기" : "▼ 고급 설정 (CLI 경로)"}
+            </button>
+            {showAdvanced && (
+              <div className="advancedBox">
+                <CliInstallBox
+                  cliName={cliName}
+                  onInstalled={props.onTest}
+                  onDetected={cliName === "gemini" ? props.setGeminiCliPath : props.setCodexCliPath}
+                />
+                <CliPathBox
+                  cliName={cliName}
+                  path={cliName === "gemini" ? props.geminiCliPath : props.codexCliPath}
+                  setPath={cliName === "gemini" ? props.setGeminiCliPath : props.setCodexCliPath}
+                  onDetected={props.onTest}
+                />
               </div>
-              <CliInstallBox
-                cliName={cliName}
-                onInstalled={props.onTest}
-                onDetected={setCliPath}
-              />
-              <CliPathBox
-                cliName={cliName}
-                path={cliPath}
-                setPath={setCliPath}
-                onDetected={props.onTest}
-              />
-            </>
-          );
-        })()}
-        {usesApiKey && (
-          <label>API 키
-            <input type="password" value={props.aiApiKey} onChange={(e) => props.setAiApiKey(e.target.value)} placeholder={props.aiProvider === "gemini" ? "Gemini API 키" : "브라우저에 저장됩니다"} />
-          </label>
+            )}
+          </div>
         )}
-        <div className="settingsActions">
-          <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
-          <button className="secondaryButton" onClick={props.onRefresh}>상태 새로고침</button>
+
+        {/* 연결 설정 — API 키 */}
+        {usesApiKey && (
+          <div className="settingSection">
+            <p className="settingSectionLabel">API 키</p>
+            <div className="connectionRow">
+              <input
+                type="password"
+                className="settingInput"
+                style={{ flex: 1 }}
+                value={props.aiApiKey}
+                onChange={(e) => props.setAiApiKey(e.target.value)}
+                placeholder={props.aiProvider === "gemini" ? "Gemini API 키" : "sk-..."}
+              />
+              <button className="secondaryButton" onClick={props.onTest}>테스트</button>
+            </div>
+          </div>
+        )}
+
+        {/* 연결 설정 — 로컬 서버 */}
+        {isLocal && (
+          <div className="settingSection">
+            <p className="settingSectionLabel">서버 주소</p>
+            <div className="connectionRow">
+              <input
+                className="settingInput"
+                style={{ flex: 1 }}
+                value={props.aiBaseUrl}
+                onChange={(e) => props.setAiBaseUrl(e.target.value)}
+                placeholder="http://localhost:11434"
+              />
+              <button className="secondaryButton" onClick={props.onTest}>테스트</button>
+            </div>
+          </div>
+        )}
+
+        {/* 하단 액션 */}
+        <div className="settingsFooter">
+          <button className="secondaryButton smallBtn" onClick={props.onRefresh}>상태 새로고침</button>
+          <button className="secondaryButton smallBtn" onClick={onResetSetup}>초기 설정 다시하기</button>
         </div>
       </div>
     </div>
