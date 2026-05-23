@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { startDeviceAuth, pollDeviceAuth, exchangeCodeForTokens, saveAuthTokens } from "./openai-device-auth";
@@ -39,11 +39,36 @@ export function getCodexAuthFilePath(): string {
   return process.env.CODEX_AUTH_FILE || join(homedir(), ".codex", "auth.json");
 }
 
+// Codex CLI Rust 바이너리는 auth_mode 값을 엄격히 소문자로 비교합니다.
+// 이전 버전에서 "ChatGpt"(대문자 G)로 저장된 파일을 자동으로 수정합니다.
+function migrateAuthModeIfNeeded(filePath: string, data: CodexAuthFile): void {
+  if (typeof data.auth_mode !== "string") return;
+  const VALID = new Set(["apikey", "chatgpt", "chatgptAuthTokens", "agentIdentity"]);
+  if (VALID.has(data.auth_mode)) return;
+  const lower = data.auth_mode.toLowerCase();
+  if (lower === "chatgpt") {
+    data.auth_mode = "chatgpt";
+    try { writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8"); } catch { /* ignore */ }
+  }
+}
+
+// CLI 실행 직전에 외부에서 호출 가능하도록 export
+export function migrateCodexAuthIfNeeded(): void {
+  const filePath = getCodexAuthFilePath();
+  if (!existsSync(filePath)) return;
+  try {
+    const data = JSON.parse(readFileSync(filePath, "utf8")) as CodexAuthFile;
+    migrateAuthModeIfNeeded(filePath, data);
+  } catch { /* ignore */ }
+}
+
 function readCodexAuthFile(): CodexAuthFile | null {
   const authFile = getCodexAuthFilePath();
   if (!existsSync(authFile)) return null;
   try {
-    return JSON.parse(readFileSync(authFile, "utf8")) as CodexAuthFile;
+    const data = JSON.parse(readFileSync(authFile, "utf8")) as CodexAuthFile;
+    migrateAuthModeIfNeeded(authFile, data);
+    return data;
   } catch {
     return null;
   }

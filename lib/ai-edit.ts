@@ -1,4 +1,4 @@
-import { getOpenAiAuthorization } from "./codex-auth";
+import { getOpenAiAuthorization, migrateCodexAuthIfNeeded } from "./codex-auth";
 import type { DocumentBlock, DocumentPatch } from "./document";
 import * as childProcess from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -255,6 +255,7 @@ async function requestPatchesWithGeminiApi(request: AiEditRequest): Promise<Docu
 }
 
 async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<DocumentPatch[]> {
+  migrateCodexAuthIfNeeded();
   const dir = await mkdtemp(join(tmpdir(), "hwp-ai-codex-"));
   const outputPath = join(dir, "last-message.txt");
   const customPath = request.aiSettings?.codexCliPath;
