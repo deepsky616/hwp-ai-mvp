@@ -85,15 +85,54 @@ function extractGeminiResponseText(data: unknown): string {
     .join("\n");
 }
 
+const CLI_TIMEOUT_MS = 180_000;
+
+function describeAuthFailure(text: string): string | null {
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("401") ||
+    lower.includes("unauthorized") ||
+    lower.includes("token_invalidated") ||
+    lower.includes("refresh_token") ||
+    lower.includes("sign in again") ||
+    lower.includes("could not be refreshed")
+  ) {
+    return "로그인 인증이 만료되었거나 무효화되었습니다. 터미널에서 'codex login'(또는 'gemini')으로 다시 로그인한 뒤 시도해 주세요.";
+  }
+  return null;
+}
+
 function execFileAsync(command: string, args: string[], cwd = process.cwd(), envPath?: string): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFileImpl(command, args, { cwd, env: envPath ? { ...process.env, PATH: envPath } : process.env, maxBuffer: 1024 * 1024 * 20 }, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(`${command} 실행에 실패했습니다: ${stderr || error.message}`));
-        return;
-      }
-      resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
-    });
+    execFileImpl(
+      command,
+      args,
+      {
+        cwd,
+        env: envPath ? { ...process.env, PATH: envPath } : process.env,
+        maxBuffer: 1024 * 1024 * 20,
+        timeout: CLI_TIMEOUT_MS,
+        killSignal: "SIGTERM",
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const err = error as NodeJS.ErrnoException & { killed?: boolean };
+          const stderrText = String(stderr ?? "");
+          if (err.killed) {
+            reject(new Error(`${command} 응답 시간이 초과되었습니다 (${CLI_TIMEOUT_MS / 1000}초). 모델 응답이 너무 오래 걸리거나 로그인 인증에 문제가 있을 수 있습니다.`));
+            return;
+          }
+          const authHint = describeAuthFailure(stderrText);
+          if (authHint) {
+            reject(new Error(authHint));
+            return;
+          }
+          reject(new Error(`${command} 실행에 실패했습니다: ${stderrText || error.message}`));
+          return;
+        }
+        resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
+      },
+    );
   });
 }
 
@@ -260,7 +299,7 @@ async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<Docum
   const outputPath = join(dir, "last-message.txt");
   const customPath = request.aiSettings?.codexCliPath;
   try {
-    await execCliAsync("codex", [
+    const { stderr } = await execCliAsync("codex", [
       "exec",
       "--color",
       "never",
@@ -273,7 +312,11 @@ async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<Docum
       resolveRequestModel(request),
       buildPlainPrompt(request),
     ], undefined, customPath);
-    const text = await readFile(outputPath, "utf8");
+    const text = await readFile(outputPath, "utf8").catch(() => "");
+    if (!text.trim()) {
+      const authHint = describeAuthFailure(stderr);
+      throw new Error(authHint ?? "Codex CLI가 응답을 반환하지 않았습니다. 터미널에서 'codex login' 상태를 확인해 주세요.");
+    }
     return parseJsonFromText(text).patches ?? [];
   } finally {
     await rm(dir, { recursive: true, force: true });
