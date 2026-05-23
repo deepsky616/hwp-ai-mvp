@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { findCliPath } from "../../../../lib/cli-resolver";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,7 +40,8 @@ export async function POST(request: NextRequest) {
       timeout: 120_000,
       maxBuffer: 1024 * 1024 * 5,
     });
-    return NextResponse.json({ ok: true, output: stdout || stderr });
+    const detectedPath = findCliPath(cliName as CliName);
+    return NextResponse.json({ ok: true, output: stdout || stderr, detectedPath: detectedPath ?? null });
   } catch (error) {
     const err = error as NodeJS.ErrnoException & { stderr?: string };
     if (err.code === "ENOENT") {

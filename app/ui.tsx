@@ -89,6 +89,10 @@ export default function HwpAiMvp() {
           oauthLoginCode={settings.oauthLoginCode}
           oauthLoginUrl={settings.oauthLoginUrl}
           isPolling={settings.isPolling}
+          codexCliPath={settings.codexCliPath}
+          setCodexCliPath={settings.setCodexCliPath}
+          geminiCliPath={settings.geminiCliPath}
+          setGeminiCliPath={settings.setGeminiCliPath}
           onTest={settings.testAiSettings}
           onRefresh={settings.refreshCodexSettings}
           onOauthLogin={settings.startOpenAiOauthLogin}

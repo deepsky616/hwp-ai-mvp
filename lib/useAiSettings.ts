@@ -18,6 +18,8 @@ export type AiSettings = {
   apiKey?: string;
   baseUrl?: string;
   model: string;
+  codexCliPath?: string;
+  geminiCliPath?: string;
 };
 
 export type CodexStatus = {
@@ -33,6 +35,8 @@ export function useAiSettings() {
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiBaseUrl, setAiBaseUrl] = useState("");
   const [selectedModel, setSelectedModel] = useState(OPENAI_MODELS[0]);
+  const [codexCliPath, setCodexCliPath] = useState("");
+  const [geminiCliPath, setGeminiCliPath] = useState("");
   const [models, setModels] = useState<string[]>(OPENAI_MODELS);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [aiTestMessage, setAiTestMessage] = useState("");
@@ -48,8 +52,10 @@ export function useAiSettings() {
       apiKey: aiApiKey.trim() || undefined,
       baseUrl: aiBaseUrl.trim() || undefined,
       model: selectedModel,
+      codexCliPath: codexCliPath.trim() || undefined,
+      geminiCliPath: geminiCliPath.trim() || undefined,
     }),
-    [aiProvider, aiApiKey, aiBaseUrl, selectedModel],
+    [aiProvider, aiApiKey, aiBaseUrl, selectedModel, codexCliPath, geminiCliPath],
   );
 
   const refreshCodexSettings = useCallback(async () => {
@@ -72,6 +78,8 @@ export function useAiSettings() {
     const savedProvider = window.localStorage.getItem("hwp-ai-provider") as AiProvider | null;
     const savedKey = window.localStorage.getItem("hwp-ai-api-key");
     const savedUrl = window.localStorage.getItem("hwp-ai-base-url");
+    const savedCodexPath = window.localStorage.getItem("hwp-ai-codex-cli-path");
+    const savedGeminiPath = window.localStorage.getItem("hwp-ai-gemini-cli-path");
     if (
       savedProvider &&
       ["openai", "codex-cli", "gemini", "gemini-cli", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
@@ -79,6 +87,8 @@ export function useAiSettings() {
       setAiProvider(savedProvider === "openai-oauth" ? "codex-cli" : savedProvider);
     if (savedKey) setAiApiKey(savedKey);
     if (savedUrl) setAiBaseUrl(savedUrl);
+    if (savedCodexPath) setCodexCliPath(savedCodexPath);
+    if (savedGeminiPath) setGeminiCliPath(savedGeminiPath);
   }, [refreshCodexSettings]);
 
   useEffect(() => {
@@ -95,7 +105,11 @@ export function useAiSettings() {
     else window.localStorage.removeItem("hwp-ai-api-key");
     if (aiBaseUrl.trim()) window.localStorage.setItem("hwp-ai-base-url", aiBaseUrl.trim());
     else window.localStorage.removeItem("hwp-ai-base-url");
-  }, [selectedModel, aiProvider, aiApiKey, aiBaseUrl]);
+    if (codexCliPath.trim()) window.localStorage.setItem("hwp-ai-codex-cli-path", codexCliPath.trim());
+    else window.localStorage.removeItem("hwp-ai-codex-cli-path");
+    if (geminiCliPath.trim()) window.localStorage.setItem("hwp-ai-gemini-cli-path", geminiCliPath.trim());
+    else window.localStorage.removeItem("hwp-ai-gemini-cli-path");
+  }, [selectedModel, aiProvider, aiApiKey, aiBaseUrl, codexCliPath, geminiCliPath]);
 
   useEffect(() => {
     if (!isPolling) return;
@@ -205,6 +219,10 @@ export function useAiSettings() {
     oauthLoginCode,
     oauthLoginUrl,
     isPolling,
+    codexCliPath,
+    setCodexCliPath,
+    geminiCliPath,
+    setGeminiCliPath,
     refreshCodexSettings,
     testAiSettings,
     startOpenAiOauthLogin,

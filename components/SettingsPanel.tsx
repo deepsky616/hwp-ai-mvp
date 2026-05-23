@@ -4,7 +4,7 @@ import type { AiProvider, CodexStatus } from "../lib/useAiSettings";
 
 type CliInstallName = "codex" | "gemini";
 
-function CliInstallBox({ cliName, onInstalled }: { cliName: CliInstallName; onInstalled?: () => void }) {
+function CliInstallBox({ cliName, onInstalled, onDetected }: { cliName: CliInstallName; onInstalled?: () => void; onDetected?: (path: string) => void }) {
   const [phase, setPhase] = useState<"idle" | "installing" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
   const [isWindows, setIsWindows] = useState(false);
@@ -25,10 +25,15 @@ function CliInstallBox({ cliName, onInstalled }: { cliName: CliInstallName; onIn
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cliName }),
       });
-      const data = (await res.json()) as { ok: boolean; error?: string };
+      const data = (await res.json()) as { ok: boolean; error?: string; detectedPath?: string | null };
       if (data.ok) {
         setPhase("done");
-        setMsg("설치가 완료되었습니다. 연결 테스트를 눌러 확인해 주세요.");
+        if (data.detectedPath) {
+          setMsg(`설치 완료 — 경로: ${data.detectedPath}`);
+          onDetected?.(data.detectedPath);
+        } else {
+          setMsg("설치가 완료되었습니다. 경로 자동 감지를 눌러 주세요.");
+        }
         onInstalled?.();
       } else {
         setPhase("error");
@@ -38,7 +43,7 @@ function CliInstallBox({ cliName, onInstalled }: { cliName: CliInstallName; onIn
       setPhase("error");
       setMsg("설치 요청 중 오류가 발생했습니다.");
     }
-  }, [cliName, onInstalled]);
+  }, [cliName, onInstalled, onDetected]);
 
   return (
     <div className="cliInstallBox">
@@ -83,11 +88,76 @@ type SettingsPanelProps = {
   oauthLoginCode: string;
   oauthLoginUrl: string;
   isPolling: boolean;
+  codexCliPath: string;
+  setCodexCliPath: (p: string) => void;
+  geminiCliPath: string;
+  setGeminiCliPath: (p: string) => void;
   onTest: () => void;
   onRefresh: () => void;
   onOauthLogin: () => void;
   onClose: () => void;
 };
+
+function CliPathBox({
+  cliName,
+  path,
+  setPath,
+  onDetected,
+}: {
+  cliName: CliInstallName;
+  path: string;
+  setPath: (p: string) => void;
+  onDetected?: () => void;
+}) {
+  const [detecting, setDetecting] = useState(false);
+  const [detectMsg, setDetectMsg] = useState("");
+
+  const detect = useCallback(async () => {
+    setDetecting(true);
+    setDetectMsg("");
+    try {
+      const res = await fetch(`/api/cli/detect?name=${cliName}`);
+      const data = (await res.json()) as { found: boolean; path: string | null };
+      if (data.found && data.path) {
+        setPath(data.path);
+        setDetectMsg(`감지됨: ${data.path}`);
+        onDetected?.();
+      } else {
+        setDetectMsg("자동 감지 실패 — 경로를 직접 입력해 주세요.");
+      }
+    } catch {
+      setDetectMsg("감지 요청 중 오류가 발생했습니다.");
+    } finally {
+      setDetecting(false);
+    }
+  }, [cliName, setPath, onDetected]);
+
+  const label = cliName === "codex" ? "Codex CLI" : "Gemini CLI";
+  const placeholder = cliName === "codex" ? "/usr/local/bin/codex" : "/usr/local/bin/gemini";
+
+  return (
+    <div className="cliPathBox">
+      <label>
+        {label} 실행 파일 경로
+        <div className="cliPathRow">
+          <input
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            placeholder={placeholder}
+          />
+          <button type="button" className="secondaryButton" onClick={detect} disabled={detecting}>
+            {detecting ? "탐색 중..." : "자동 감지"}
+          </button>
+        </div>
+      </label>
+      {detectMsg && (
+        <p className={detectMsg.startsWith("감지됨") ? "settingsHint" : "settingsHint errorHint"}>
+          {detectMsg}
+        </p>
+      )}
+    </div>
+  );
+}
 
 type WizardStep = "pick" | "apikey" | "oauth" | "local" | "done";
 
@@ -211,6 +281,7 @@ function WizardModal({ step, setStep, completeSetup, ...props }: { step: WizardS
             <CliInstallBox
               cliName={props.aiProvider === "gemini-cli" ? "gemini" : "codex"}
               onInstalled={props.onTest}
+              onDetected={props.aiProvider === "gemini-cli" ? props.setGeminiCliPath : props.setCodexCliPath}
             />
             <button onClick={props.onTest} disabled={props.isPolling}>
               연결 확인
@@ -293,22 +364,34 @@ function SettingsModal(props: SettingsPanelProps) {
             <input value={props.aiBaseUrl} onChange={(e) => props.setAiBaseUrl(e.target.value)} placeholder="http://localhost:11434" />
           </label>
         )}
-        {isCli && (
-          <>
-            <div className="oauthLoginBox">
-              <button className="secondaryButton" onClick={props.onTest}>CLI 연결 테스트</button>
-              <p className="settingsHint">
-                {props.aiProvider === "gemini-cli"
-                  ? "Gemini CLI 로그인을 사용합니다. 터미널에서 gemini 로그인이 먼저 완료되어야 합니다."
-                  : "Codex CLI 로그인을 사용합니다. 터미널에서 codex login이 먼저 완료되어야 합니다."}
-              </p>
-            </div>
-            <CliInstallBox
-              cliName={props.aiProvider === "gemini-cli" ? "gemini" : "codex"}
-              onInstalled={props.onTest}
-            />
-          </>
-        )}
+        {isCli && (() => {
+          const cliName: CliInstallName = props.aiProvider === "gemini-cli" ? "gemini" : "codex";
+          const cliPath = cliName === "gemini" ? props.geminiCliPath : props.codexCliPath;
+          const setCliPath = cliName === "gemini" ? props.setGeminiCliPath : props.setCodexCliPath;
+          return (
+            <>
+              <div className="oauthLoginBox">
+                <button className="secondaryButton" onClick={props.onTest}>CLI 연결 테스트</button>
+                <p className="settingsHint">
+                  {props.aiProvider === "gemini-cli"
+                    ? "Gemini CLI 로그인을 사용합니다. 터미널에서 gemini 로그인이 먼저 완료되어야 합니다."
+                    : "Codex CLI 로그인을 사용합니다. 터미널에서 codex login이 먼저 완료되어야 합니다."}
+                </p>
+              </div>
+              <CliInstallBox
+                cliName={cliName}
+                onInstalled={props.onTest}
+                onDetected={setCliPath}
+              />
+              <CliPathBox
+                cliName={cliName}
+                path={cliPath}
+                setPath={setCliPath}
+                onDetected={props.onTest}
+              />
+            </>
+          );
+        })()}
         {usesApiKey && (
           <label>API 키
             <input type="password" value={props.aiApiKey} onChange={(e) => props.setAiApiKey(e.target.value)} placeholder={props.aiProvider === "gemini" ? "Gemini API 키" : "브라우저에 저장됩니다"} />

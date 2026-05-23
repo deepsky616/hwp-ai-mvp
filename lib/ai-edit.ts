@@ -13,6 +13,8 @@ export type AiSettings = {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  codexCliPath?: string;
+  geminiCliPath?: string;
 };
 
 export type AiEditRequest = {
@@ -95,9 +97,9 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd(), env
   });
 }
 
-async function execCliAsync(name: CliName, args: string[], cwd = process.cwd()): Promise<{ stdout: string; stderr: string }> {
+async function execCliAsync(name: CliName, args: string[], cwd = process.cwd(), customPath?: string): Promise<{ stdout: string; stderr: string }> {
   const { resolveCli } = await import("./cli-resolver");
-  const resolved = resolveCli(name);
+  const resolved = resolveCli(name, customPath);
   return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath);
 }
 
@@ -255,6 +257,7 @@ async function requestPatchesWithGeminiApi(request: AiEditRequest): Promise<Docu
 async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<DocumentPatch[]> {
   const dir = await mkdtemp(join(tmpdir(), "hwp-ai-codex-"));
   const outputPath = join(dir, "last-message.txt");
+  const customPath = request.aiSettings?.codexCliPath;
   try {
     await execCliAsync("codex", [
       "exec",
@@ -268,7 +271,7 @@ async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<Docum
       "--model",
       resolveRequestModel(request),
       buildPlainPrompt(request),
-    ]);
+    ], undefined, customPath);
     const text = await readFile(outputPath, "utf8");
     return parseJsonFromText(text).patches ?? [];
   } finally {
@@ -277,6 +280,7 @@ async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<Docum
 }
 
 async function requestPatchesWithGeminiCli(request: AiEditRequest): Promise<DocumentPatch[]> {
+  const customPath = request.aiSettings?.geminiCliPath;
   const { stdout } = await execCliAsync("gemini", [
     "--model",
     resolveRequestModel(request),
@@ -286,7 +290,7 @@ async function requestPatchesWithGeminiCli(request: AiEditRequest): Promise<Docu
     "text",
     "--raw-output",
     "--accept-raw-output-risk",
-  ]);
+  ], undefined, customPath);
   return parseJsonFromText(stdout).patches ?? [];
 }
 
@@ -294,12 +298,12 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
   const provider = settings.provider || "openai";
 
   if (provider === "codex-cli" || provider === "openai-oauth") {
-    await execCliAsync("codex", ["--version"]);
+    await execCliAsync("codex", ["--version"], undefined, settings.codexCliPath);
     return { ok: true, message: "Codex CLI를 사용할 수 있습니다. 터미널에서 codex login이 완료되어 있어야 합니다." };
   }
 
   if (provider === "gemini-cli") {
-    await execCliAsync("gemini", ["--version"]);
+    await execCliAsync("gemini", ["--version"], undefined, settings.geminiCliPath);
     return { ok: true, message: "Gemini CLI를 사용할 수 있습니다. 터미널에서 Gemini CLI 로그인이 완료되어 있어야 합니다." };
   }
 

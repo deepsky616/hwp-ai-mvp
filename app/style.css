@@ -187,6 +187,44 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
   white-space: nowrap;
 }
 
+/* CLI 경로 설정 박스 */
+.cliPathBox {
+  display: grid;
+  gap: 6px;
+}
+
+.cliPathBox label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.cliPathRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.cliPathRow input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  font-family: monospace;
+}
+
+.cliPathRow button {
+  white-space: nowrap;
+}
+
 /* CLI 원클릭 설치 박스 */
 .cliInstallBox {
   display: grid;
