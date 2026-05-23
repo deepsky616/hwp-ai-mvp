@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { startDeviceAuth, pollDeviceAuth, exchangeCodeForTokens, saveAuthTokens } from "./openai-device-auth";
 
 export type AuthSource = "codex-oauth" | "api-key" | "missing";
 
@@ -24,15 +23,6 @@ type CodexAuthFile = {
     id_token?: string;
     account_id?: string;
   };
-};
-
-export type CodexDeviceLoginStart = {
-  ok: true;
-  loginUrl: string;
-  code: string;
-  device_auth_id: string;
-  expiresInMinutes: number;
-  message: string;
 };
 
 export function getCodexAuthFilePath(): string {
@@ -138,45 +128,6 @@ export function normalizeModelList(models: Array<{ id?: unknown }>): string[] {
     if (ai >= 0 || bi >= 0) return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
     return a.localeCompare(b);
   });
-}
-
-export async function startCodexDeviceLogin(): Promise<CodexDeviceLoginStart> {
-  if (process.env.VERCEL) {
-    throw new Error(
-      "OpenAI 계정 로그인 시작은 로컬 실행 환경에서만 사용할 수 있습니다. 배포 환경에서는 API 키 방식을 사용해 주세요.",
-    );
-  }
-
-  const { device_auth_id, user_code } = await startDeviceAuth();
-
-  return {
-    ok: true,
-    loginUrl: "https://auth.openai.com/codex/device",
-    code: user_code,
-    device_auth_id,
-    expiresInMinutes: 15,
-    message: "OpenAI 계정 로그인 창에서 코드를 입력한 뒤 잠시 기다려 주세요.",
-  };
-}
-
-export async function pollAndCompleteLogin(
-  device_auth_id: string,
-  user_code: string,
-): Promise<{ status: "pending" | "complete" }> {
-  const result = await pollDeviceAuth(device_auth_id, user_code);
-  if (result.status === "pending") return { status: "pending" };
-  const tokens = await exchangeCodeForTokens(result.authorization_code, result.code_verifier);
-  saveAuthTokens(tokens);
-  return { status: "complete" };
-}
-
-export async function completeLoginWithAuthorizationCode(
-  authorization_code: string,
-  code_verifier: string,
-): Promise<{ ok: true }> {
-  const tokens = await exchangeCodeForTokens(authorization_code, code_verifier);
-  saveAuthTokens(tokens);
-  return { ok: true };
 }
 
 export async function listUsableModels(): Promise<string[]> {

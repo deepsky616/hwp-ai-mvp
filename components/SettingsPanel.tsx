@@ -122,45 +122,6 @@ function CliPathBox({ cliName, path, setPath, onDetected }: {
   );
 }
 
-function OAuthCodeField({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  const copyCode = useCallback(async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(code);
-      } else {
-        const el = document.createElement("input");
-        el.value = code;
-        el.style.cssText = "position:fixed;opacity:0";
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand("copy");
-        document.body.removeChild(el);
-      }
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch { /* ignore */ }
-  }, [code]);
-
-  return (
-    <div className="oauthCodeBox">
-      <label htmlFor="oauth-code-input">인증 코드</label>
-      <div className="oauthCodeRow">
-        <input
-          id="oauth-code-input"
-          readOnly
-          value={code}
-          onFocus={(e) => e.currentTarget.select()}
-          onClick={(e) => e.currentTarget.select()}
-        />
-        <button type="button" className="secondaryButton" onClick={copyCode}>
-          {copied ? "복사됨" : "복사"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ─── 모델 선택기 ─────────────────────────────────────────────────────────────
 
 function ModelPicker({ models, value, onChange }: {
@@ -230,7 +191,6 @@ type SettingsPanelProps = {
   models: string[];
   codexStatus: CodexStatus | null;
   aiTestMessage: string;
-  oauthLoginCode: string;
   oauthLoginUrl: string;
   isPolling: boolean;
   codexCliPath: string;
@@ -353,8 +313,11 @@ function WizardModal({
                       {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
                     </button>
                   )}
-                  {props.oauthLoginCode && props.aiProvider !== "gemini-cli" && (
-                    <OAuthCodeField code={props.oauthLoginCode} />
+                  {props.oauthLoginUrl && props.aiProvider !== "gemini-cli" && (
+                    <p className="settingsHint">
+                      로그인 창이 열리지 않으면{" "}
+                      <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">여기를 클릭</a>해 주세요.
+                    </p>
                   )}
                 </>
               )}
@@ -521,7 +484,12 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
                     {props.codexStatus.message}
                   </p>
                 )}
-                {props.oauthLoginCode && <OAuthCodeField code={props.oauthLoginCode} />}
+                {props.oauthLoginUrl && (
+                  <p className="settingsHint">
+                    로그인 창이 열리지 않으면{" "}
+                    <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">여기를 클릭</a>해 주세요.
+                  </p>
+                )}
               </>
             )}
 

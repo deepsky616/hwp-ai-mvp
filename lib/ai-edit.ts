@@ -102,9 +102,9 @@ function describeAuthFailure(text: string): string | null {
   return null;
 }
 
-function execFileAsync(command: string, args: string[], cwd = process.cwd(), envPath?: string): Promise<{ stdout: string; stderr: string }> {
+function execFileAsync(command: string, args: string[], cwd = process.cwd(), envPath?: string, stdinInput?: string): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFileImpl(
+    const child = execFileImpl(
       command,
       args,
       {
@@ -133,13 +133,16 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd(), env
         resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
       },
     );
+    if (stdinInput !== undefined && child?.stdin) {
+      child.stdin.end(stdinInput);
+    }
   });
 }
 
-async function execCliAsync(name: CliName, args: string[], cwd = process.cwd(), customPath?: string): Promise<{ stdout: string; stderr: string }> {
+async function execCliAsync(name: CliName, args: string[], cwd = process.cwd(), customPath?: string, stdinInput?: string): Promise<{ stdout: string; stderr: string }> {
   const { resolveCli } = await import("./cli-resolver");
   const resolved = resolveCli(name, customPath);
-  return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath);
+  return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath, stdinInput);
 }
 
 function getClientOpenAiAuthorization(settings?: AiSettings) {
@@ -310,8 +313,8 @@ async function requestPatchesWithCodexCli(request: AiEditRequest): Promise<Docum
       process.cwd(),
       "--model",
       resolveRequestModel(request),
-      buildPlainPrompt(request),
-    ], undefined, customPath);
+      "-",
+    ], undefined, customPath, buildPlainPrompt(request));
     const text = await readFile(outputPath, "utf8").catch(() => "");
     if (!text.trim()) {
       const authHint = describeAuthFailure(stderr);
@@ -342,8 +345,13 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
   const provider = settings.provider || "openai";
 
   if (provider === "codex-cli" || provider === "openai-oauth") {
-    await execCliAsync("codex", ["--version"], undefined, settings.codexCliPath);
-    return { ok: true, message: "Codex CLI를 사용할 수 있습니다. 터미널에서 codex login이 완료되어 있어야 합니다." };
+    migrateCodexAuthIfNeeded();
+    const { stdout, stderr } = await execCliAsync("codex", ["login", "status"], undefined, settings.codexCliPath);
+    const combined = `${stdout}\n${stderr}`.toLowerCase();
+    if (combined.includes("logged in")) {
+      return { ok: true, message: "Codex 계정 로그인이 확인되었습니다." };
+    }
+    return { ok: false, message: "Codex 로그인이 필요합니다. 'OpenAI 계정으로 로그인'을 눌러 주세요." };
   }
 
   if (provider === "gemini-cli") {

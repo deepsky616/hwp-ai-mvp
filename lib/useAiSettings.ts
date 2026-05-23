@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { startBrowserOpenAiAccountLogin, type OpenAiLoginStartResult } from "./openai-login-popup";
 
 export type AiProvider = "openai" | "codex-cli" | "gemini" | "gemini-cli" | "openai-oauth" | "ollama" | "mlx" | "custom";
 
@@ -45,10 +44,9 @@ export function useAiSettings() {
   const [models, setModels] = useState<string[]>(OPENAI_MODELS);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [aiTestMessage, setAiTestMessage] = useState("");
-  const [oauthLoginCode, setOauthLoginCode] = useState("");
   const [oauthLoginUrl, setOauthLoginUrl] = useState("");
 
-  const pollingRef = useRef<{ device_auth_id: string; user_code: string } | null>(null);
+  const codexSessionRef = useRef<{ sessionId: string } | null>(null);
   const [isPolling, setIsPolling] = useState(false);
 
   const [geminiLoginStatus, setGeminiLoginStatus] = useState<GeminiLoginStatus | null>(null);
@@ -135,22 +133,20 @@ export function useAiSettings() {
     if (!isPolling) return;
     let isRunning = false;
     const id = setInterval(async () => {
-      const p = pollingRef.current;
+      const p = codexSessionRef.current;
       if (!p || isRunning) return;
       isRunning = true;
       try {
-        const res = await fetch(
-          `/api/codex/login/poll?device_auth_id=${encodeURIComponent(p.device_auth_id)}&user_code=${encodeURIComponent(p.user_code)}`,
-        );
+        const res = await fetch(`/api/codex/login/poll?session_id=${encodeURIComponent(p.sessionId)}`);
         const data = (await res.json()) as { status: string; error?: string };
         if (data.status === "complete") {
-          pollingRef.current = null;
+          codexSessionRef.current = null;
           setIsPolling(false);
           setAiTestMessage("로그인이 완료되었습니다. 설정을 불러오는 중...");
           await refreshCodexSettings();
           setAiTestMessage("로그인이 완료되었습니다.");
         } else if (data.status === "error") {
-          pollingRef.current = null;
+          codexSessionRef.current = null;
           setIsPolling(false);
           setAiTestMessage(`로그인 확인 중 오류가 발생했습니다: ${data.error ?? "다시 시도해 주세요."}`);
         }
@@ -159,7 +155,7 @@ export function useAiSettings() {
       } finally {
         isRunning = false;
       }
-    }, 5000);
+    }, 2000);
     return () => clearInterval(id);
   }, [isPolling, refreshCodexSettings]);
 
@@ -229,48 +225,31 @@ export function useAiSettings() {
   }, [effectiveAiSettings]);
 
   const startOpenAiOauthLogin = useCallback(async () => {
-    setAiProvider("openai-oauth");
-    setAiTestMessage("OpenAI 계정 로그인 코드를 만드는 중입니다...");
-    setOauthLoginCode("");
+    setAiProvider("codex-cli");
+    setAiTestMessage("Codex 로그인을 시작합니다...");
     setOauthLoginUrl("");
     setIsPolling(false);
-    pollingRef.current = null;
-
-    const isElectron =
-      typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+    codexSessionRef.current = null;
 
     try {
-      const result = await startBrowserOpenAiAccountLogin({
-        openWindow: (url, target, features) => {
-          if (isElectron && (!url || url === "about:blank")) return null;
-          return window.open(url, target, features);
-        },
-        requestLoginStart: async (): Promise<OpenAiLoginStartResult> => {
-          const res = await fetch("/api/codex/login/start", { method: "POST" });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "로그인을 시작하지 못했습니다");
-          return data as OpenAiLoginStartResult;
-        },
+      const res = await fetch("/api/codex/login/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codexCliPath: codexCliPath.trim() || undefined }),
       });
-
-      const loginData = result.data;
-      setOauthLoginCode(loginData.code || "");
-      setOauthLoginUrl(loginData.loginUrl || "");
-
-      if (loginData.device_auth_id && loginData.code) {
-        pollingRef.current = { device_auth_id: loginData.device_auth_id, user_code: loginData.code };
-        setIsPolling(true);
-        setAiTestMessage("로그인 창에서 코드를 입력해 주세요. 완료되면 자동으로 감지합니다.");
-      } else {
-        const notice = result.popupBlocked ? " 팝업이 차단되면 아래 링크를 눌러 주세요." : "";
-        setAiTestMessage(
-          (loginData.message || "로그인 창에서 코드를 입력해 주세요.") + notice,
-        );
+      const data = (await res.json()) as { ok?: boolean; authUrl?: string; sessionId?: string; error?: string };
+      if (!res.ok || !data.authUrl || !data.sessionId) {
+        throw new Error(data.error ?? "로그인을 시작하지 못했습니다");
       }
+      window.open(data.authUrl, "_blank", "width=600,height=760,popup=yes");
+      setOauthLoginUrl(data.authUrl);
+      codexSessionRef.current = { sessionId: data.sessionId };
+      setIsPolling(true);
+      setAiTestMessage("브라우저에서 OpenAI 계정으로 로그인해 주세요. 완료되면 자동으로 감지됩니다.");
     } catch (error) {
       setAiTestMessage(error instanceof Error ? error.message : String(error));
     }
-  }, []);
+  }, [codexCliPath]);
 
   return {
     aiProvider,
@@ -285,7 +264,6 @@ export function useAiSettings() {
     codexStatus,
     effectiveAiSettings,
     aiTestMessage,
-    oauthLoginCode,
     oauthLoginUrl,
     isPolling,
     codexCliPath,

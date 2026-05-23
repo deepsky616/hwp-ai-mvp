@@ -3,20 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  completeLoginWithAuthorizationCode,
   getCodexAuthStatus,
   getOpenAiAuthorization,
   listUsableModels,
   normalizeModelList,
-  startCodexDeviceLogin,
 } from "./codex-auth";
-
-vi.mock("./openai-device-auth", () => ({
-  startDeviceAuth: vi.fn(),
-  pollDeviceAuth: vi.fn(),
-  exchangeCodeForTokens: vi.fn(),
-  saveAuthTokens: vi.fn(),
-}));
 
 const originalEnv = { ...process.env };
 
@@ -78,63 +69,16 @@ describe("코덱스 인증", () => {
     }));
   });
 
-  it("코덱스 기기 인증 로그인 주소와 코드를 HTTP API로 반환합니다", async () => {
-    const { startDeviceAuth } = await import("./openai-device-auth");
-    vi.mocked(startDeviceAuth).mockResolvedValue({
-      device_auth_id: "test-device-auth-id",
-      user_code: "ABCD-EF123",
-      interval: 5,
+  it("auth_mode가 'ChatGpt'(대문자)이면 'chatgpt'로 자동 마이그레이션합니다", () => {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const file = writeAuth({
+      auth_mode: "ChatGpt",
+      tokens: { access_token: "token-1" },
     });
 
-    const result = await startCodexDeviceLogin();
+    getCodexAuthStatus();
 
-    expect(result).toMatchObject({
-      ok: true,
-      loginUrl: "https://auth.openai.com/codex/device",
-      code: "ABCD-EF123",
-      device_auth_id: "test-device-auth-id",
-      expiresInMinutes: 15,
-    });
-    expect(startDeviceAuth).toHaveBeenCalled();
-  });
-
-  it("코덱스 기기 로그인이 다른 코드를 반환해도 올바르게 전달됩니다", async () => {
-    const { startDeviceAuth } = await import("./openai-device-auth");
-    vi.mocked(startDeviceAuth).mockResolvedValue({
-      device_auth_id: "another-device-auth-id",
-      user_code: "WXYZ-12345",
-      interval: 5,
-    });
-
-    const result = await startCodexDeviceLogin();
-
-    expect(result).toMatchObject({
-      loginUrl: "https://auth.openai.com/codex/device",
-      code: "WXYZ-12345",
-      device_auth_id: "another-device-auth-id",
-    });
-  });
-
-  it("배포 환경에서는 코덱스 기기 인증 시작을 막습니다", async () => {
-    process.env.VERCEL = "1";
-
-    await expect(startCodexDeviceLogin()).rejects.toThrow("로컬 실행 환경");
-  });
-
-  it("콜백 authorization_code를 토큰으로 교환하고 저장합니다", async () => {
-    const { exchangeCodeForTokens, saveAuthTokens } = await import("./openai-device-auth");
-    const tokens = {
-      access_token: "access-token",
-      refresh_token: "refresh-token",
-      id_token: "id-token",
-    };
-    vi.mocked(exchangeCodeForTokens).mockResolvedValue(tokens);
-
-    await expect(completeLoginWithAuthorizationCode("auth-code", "verifier")).resolves.toEqual({
-      ok: true,
-    });
-
-    expect(exchangeCodeForTokens).toHaveBeenCalledWith("auth-code", "verifier");
-    expect(saveAuthTokens).toHaveBeenCalledWith(tokens);
+    const migrated = JSON.parse(readFileSync(file, "utf8"));
+    expect(migrated.auth_mode).toBe("chatgpt");
   });
 });

@@ -122,7 +122,9 @@ export function getGeminiAuthStatus(): GeminiAuthStatus {
 // ─── 로그인 흐름 ──────────────────────────────────────────────────────────
 
 type SessionResult = { status: "complete" } | { status: "error"; error: string };
-const completedSessions = new Map<string, SessionResult>();
+// Next.js의 route별 모듈 격리에 대비해 globalThis로 세션 결과를 공유합니다.
+const globalForGemini = globalThis as unknown as { __geminiLoginSessions?: Map<string, SessionResult> };
+const completedSessions = (globalForGemini.__geminiLoginSessions ??= new Map<string, SessionResult>());
 
 async function exchangeCodeForTokens(
   code: string,
