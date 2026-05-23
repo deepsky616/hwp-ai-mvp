@@ -17,6 +17,8 @@ button:hover { background: var(--accent-dark); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 .secondaryButton { background: #e2e8f0; color: #172033; }
 .secondaryButton:hover { background: #cbd5e1; }
+.stopButton { background: #dc2626; color: #fff; }
+.stopButton:hover { background: #b91c1c; }
 
 .shell { min-height: 100vh; padding: 28px; }
 .hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 18px; }

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useRef, useState } from "react";
-import { buildPatchPreviewCards, createChatMessage, summarizePatchResult, type ChatMessage, type PatchPreviewCard } from "./chat-panel";
+import { buildPatchPreviewCards, createChatMessage, replaceChatMessageText, summarizePatchResult, type ChatMessage, type PatchPreviewCard } from "./chat-panel";
 import { blocksToHtml, blocksToMarkdown, type DocumentBlock, type DocumentPatch } from "./document";
 import { shouldUseTextImportFallback } from "./hwp-load";
 import type { AiSettings } from "./useAiSettings";
@@ -22,8 +22,13 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
   return fetch(url, init);
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export function useHwpEditor() {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [fileName, setFileName] = useState("document.hwp");
   const [status, setStatus] = useState("HWP 파일을 열어 주세요.");
   const [blocks, setBlocks] = useState<DocumentBlock[]>([]);
@@ -117,19 +122,37 @@ export function useHwpEditor() {
 
   const createAiSuggestion = useCallback(async (instruction: string, aiSettings: AiSettings) => {
     if (!instruction.trim()) { setStatus("수정 지시를 입력해 주세요."); return; }
+    const controller = new AbortController();
+    abortRef.current = controller;
     setIsBusy(true);
-    setChatMessages((m) => [...m, createChatMessage("user", instruction), createChatMessage("assistant", "문서를 읽고 수정 제안을 만드는 중입니다.")]);
+    const progressId = `progress-${Date.now()}`;
+    setChatMessages((m) => [
+      ...m,
+      createChatMessage("user", instruction),
+      createChatMessage("assistant", "문서를 읽고 수정 제안을 만드는 중...", progressId),
+    ]);
+    const allPatches: DocumentPatch[] = [];
+    let currentBlocks: DocumentBlock[] = blocks;
+    let stoppedAtChunk = -1;
+    let totalChunks = 0;
     try {
-      const currentBlocks = blocks.length ? blocks : await requestRhwp<DocumentBlock[]>("extractTextBlocks");
+      currentBlocks = blocks.length ? blocks : await requestRhwp<DocumentBlock[]>("extractTextBlocks");
       setBlocks(currentBlocks);
       const chunks = chunkArray(currentBlocks, CHUNK_SIZE);
-      const allPatches: DocumentPatch[] = [];
+      totalChunks = chunks.length;
       for (let i = 0; i < chunks.length; i++) {
-        if (chunks.length > 1) setStatus(`${i + 1}/${chunks.length} 구간 처리 중...`);
+        if (controller.signal.aborted) { stoppedAtChunk = i; break; }
+        const progressText =
+          i === 0
+            ? `1/${chunks.length} 구간 처리 중 · ${chunks[i].length}문단`
+            : `${i + 1}/${chunks.length} 구간 처리 중 · 누적 ${allPatches.length}개 수정`;
+        setStatus(progressText);
+        setChatMessages((m) => replaceChatMessageText(m, progressId, progressText));
         const res = await fetchWithRetry("/api/ai/edit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ instruction, blocks: chunks[i], model: aiSettings.model, aiSettings }),
+          signal: controller.signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "AI 수정에 실패했습니다");
@@ -137,17 +160,36 @@ export function useHwpEditor() {
       }
       setPendingPatches(allPatches);
       setPreviewCards(buildPatchPreviewCards(currentBlocks, allPatches));
-      const summary = summarizePatchResult(allPatches);
-      setStatus(summary);
-      setChatMessages((m) => [...m, createChatMessage("assistant", summary)]);
+      if (stoppedAtChunk >= 0) {
+        const stopMsg = `${stoppedAtChunk}/${totalChunks} 구간까지 처리 후 중단됨 · ${allPatches.length}개 수정 보관`;
+        setStatus(stopMsg);
+        setChatMessages((m) => replaceChatMessageText(m, progressId, stopMsg));
+      } else {
+        const summary = summarizePatchResult(allPatches);
+        setStatus(summary);
+        setChatMessages((m) => replaceChatMessageText(m, progressId, summary));
+      }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      setStatus(msg);
-      setChatMessages((m) => [...m, createChatMessage("assistant", `수정 제안을 만들지 못했습니다. ${msg}`)]);
+      if (isAbortError(error) || controller.signal.aborted) {
+        setPendingPatches(allPatches);
+        setPreviewCards(buildPatchPreviewCards(currentBlocks, allPatches));
+        const stopMsg = `처리를 중단했습니다 · ${allPatches.length}개 수정 보관`;
+        setStatus(stopMsg);
+        setChatMessages((m) => replaceChatMessageText(m, progressId, stopMsg));
+      } else {
+        const msg = error instanceof Error ? error.message : String(error);
+        setStatus(msg);
+        setChatMessages((m) => replaceChatMessageText(m, progressId, `수정 제안을 만들지 못했습니다. ${msg}`));
+      }
     } finally {
+      abortRef.current = null;
       setIsBusy(false);
     }
   }, [blocks, requestRhwp]);
+
+  const stopProcessing = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const applyPendingAiEdit = useCallback(async () => {
     if (pendingPatches.length === 0) { setStatus("반영할 수정 제안이 없습니다."); return; }
@@ -224,7 +266,7 @@ export function useHwpEditor() {
   return {
     frameRef, fileName, status, blocks, isBusy,
     pendingPatches, previewCards, chatMessages,
-    loadFile, extractBlocks, createAiSuggestion,
+    loadFile, extractBlocks, createAiSuggestion, stopProcessing,
     applyPendingAiEdit, clearPatches,
     exportHwp, exportHwpx, exportMarkdown, exportHtml,
   };

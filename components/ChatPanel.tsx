@@ -12,6 +12,7 @@ type ChatPanelProps = {
   tableCellCount: number;
   onInstructionChange: (value: string) => void;
   onSuggest: () => void;
+  onStop: () => void;
   onApply: () => void;
   onClearPatches: () => void;
   onOpenSettings: () => void;
@@ -27,7 +28,7 @@ const QUICK_PROMPTS = [
 export function ChatPanel({
   isBusy, status, chatMessages, previewCards, pendingPatches,
   instruction, paragraphCount, tableCellCount,
-  onInstructionChange, onSuggest, onApply, onClearPatches, onOpenSettings,
+  onInstructionChange, onSuggest, onStop, onApply, onClearPatches, onOpenSettings,
 }: ChatPanelProps) {
   return (
     <aside className="card sideCard chatPanel">
@@ -78,7 +79,11 @@ export function ChatPanel({
       <div className="composer">
         <textarea value={instruction} onChange={(e) => onInstructionChange(e.target.value)} placeholder="문서에 원하는 수정 지시를 입력하세요" />
         <div className="composerActions">
-          <button disabled={isBusy} onClick={onSuggest}>보내기</button>
+          {isBusy ? (
+            <button className="stopButton" onClick={onStop}>처리 중단</button>
+          ) : (
+            <button onClick={onSuggest}>보내기</button>
+          )}
           <button className="secondaryButton" disabled={isBusy || pendingPatches.length === 0} onClick={onApply}>문서에 반영</button>
         </div>
       </div>

@@ -26,6 +26,10 @@ export function createChatMessage(role: ChatRole, text: string, id?: string): Ch
   };
 }
 
+export function replaceChatMessageText(messages: ChatMessage[], id: string, text: string): ChatMessage[] {
+  return messages.map((m) => (m.id === id ? { ...m, text } : m));
+}
+
 function patchKey(patch: DocumentPatch): string {
   if (patch.type === "paragraph") return `paragraph:${patch.sectionIndex}:${patch.paragraphIndex}`;
   return `tableCell:${patch.sectionIndex}:${patch.parentParagraphIndex}:${patch.controlIndex}:${patch.cellIndex}:${patch.cellParagraphIndex}`;

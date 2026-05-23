@@ -36,6 +36,7 @@ export default function HwpAiMvp() {
           hasPendingPatches={editor.pendingPatches.length > 0}
           onExtract={editor.extractBlocks}
           onSuggest={() => editor.createAiSuggestion(instruction, settings.effectiveAiSettings)}
+          onStop={editor.stopProcessing}
           onApply={editor.applyPendingAiEdit}
           onExportHwp={editor.exportHwp}
           onExportHwpx={editor.exportHwpx}
@@ -66,6 +67,7 @@ export default function HwpAiMvp() {
             tableCellCount={tableCellCount}
             onInstructionChange={setInstruction}
             onSuggest={() => editor.createAiSuggestion(instruction, settings.effectiveAiSettings)}
+            onStop={editor.stopProcessing}
             onApply={editor.applyPendingAiEdit}
             onClearPatches={editor.clearPatches}
             onOpenSettings={() => setSettingsOpen(true)}

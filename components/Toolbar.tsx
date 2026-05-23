@@ -3,6 +3,7 @@ type ToolbarProps = {
   hasPendingPatches: boolean;
   onExtract: () => void;
   onSuggest: () => void;
+  onStop: () => void;
   onApply: () => void;
   onExportHwp: () => void;
   onExportHwpx: () => void;
@@ -13,14 +14,18 @@ type ToolbarProps = {
 
 export function Toolbar({
   isBusy, hasPendingPatches,
-  onExtract, onSuggest, onApply,
+  onExtract, onSuggest, onStop, onApply,
   onExportHwp, onExportHwpx, onExportMarkdown, onExportHtml,
   onOpenSettings,
 }: ToolbarProps) {
   return (
     <section className="toolbar">
       <button disabled={isBusy} onClick={onExtract}>본문과 표 추출</button>
-      <button disabled={isBusy} onClick={onSuggest}>수정 제안 만들기</button>
+      {isBusy ? (
+        <button className="stopButton" onClick={onStop}>처리 중단</button>
+      ) : (
+        <button onClick={onSuggest}>수정 제안 만들기</button>
+      )}
       <button disabled={isBusy || !hasPendingPatches} onClick={onApply}>제안 문서에 반영</button>
       <button disabled={isBusy} onClick={onExportHwp}>HWP 저장</button>
       <button disabled={isBusy} onClick={onExportHwpx}>HWPX 저장</button>
