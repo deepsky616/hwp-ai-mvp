@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { expandHome, findCliPath, resolveCli } from "./cli-resolver";
+import { buildToolPath, expandHome, findCliPath, findExecutablePath, resolveCli } from "./cli-resolver";
 
 const tempDirs: string[] = [];
 
@@ -39,6 +39,12 @@ describe("CLI resolver", () => {
   it("Antigravity CLI는 agy 실행 파일을 찾습니다", () => {
     const { dir, file } = tempExecutable("agy");
     expect(findCliPath("antigravity", undefined, dir)).toBe(file);
+  });
+
+  it("npm 같은 설치 도구도 PATH에서 찾고 도구 PATH를 구성합니다", () => {
+    const { dir, file } = tempExecutable("npm");
+    expect(findExecutablePath("npm", dir)).toBe(file);
+    expect(buildToolPath(file).split(delimiter)[0]).toBe(dir);
   });
 
   it("해결된 CLI 디렉터리를 PATH 앞쪽에 병합합니다", () => {

@@ -39,7 +39,11 @@ function listDirs(parent: string): string[] {
   }
 }
 
-function pathEntries(pathValue = process.env.PATH || ""): string[] {
+function defaultPathValue(): string {
+  return process.env.PATH || process.env.Path || "";
+}
+
+function pathEntries(pathValue = defaultPathValue()): string[] {
   return pathValue.split(delimiter).map((entry) => entry.trim()).filter(Boolean);
 }
 
@@ -54,9 +58,13 @@ function commandName(name: CliName): string {
   return name === "antigravity" ? "agy" : name;
 }
 
+function executableFileNames(command: string, platform = process.platform): string[] {
+  return platform === "win32" ? [`${command}.cmd`, `${command}.exe`, `${command}.ps1`, command] : [command];
+}
+
 function cliFileNames(name: CliName, platform = process.platform): string[] {
   const command = commandName(name);
-  return platform === "win32" ? [`${command}.cmd`, `${command}.exe`, `${command}.ps1`, command] : [command];
+  return executableFileNames(command, platform);
 }
 
 function candidatePaths(name: CliName, platform = process.platform): string[] {
@@ -74,6 +82,9 @@ function candidatePaths(name: CliName, platform = process.platform): string[] {
       join(localAppData, "pnpm", `${command}.cmd`),
       join(localAppData, "agy", "bin", "agy.exe"),
       join(localAppData, "agy", "bin", "agy.cmd"),
+      join(localAppData, "Programs", "agy", "bin", "agy.exe"),
+      join(home, ".local", "bin", "agy.exe"),
+      join(home, ".local", "bin", "agy.cmd"),
       join(home, ".bun", "bin", `${command}.exe`),
       join(home, ".volta", "bin", `${command}.exe`),
       ...nvmBins,
@@ -104,6 +115,61 @@ export function findCliPath(name: CliName, customPath?: string, pathValue = proc
   }
 
   return candidatePaths(name).find(isFile) || null;
+}
+
+function executableCandidatePaths(command: string, platform = process.platform): string[] {
+  const home = osModule().homedir();
+
+  if (platform === "win32") {
+    const appData = process.env.APPDATA || join(home, "AppData", "Roaming");
+    const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local");
+    const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+    const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    const systemRoot = process.env.SystemRoot || "C:\\Windows";
+    const names = executableFileNames(command, platform);
+    const dirs = [
+      join(programFiles, "nodejs"),
+      join(programFilesX86, "nodejs"),
+      join(appData, "npm"),
+      join(localAppData, "pnpm"),
+      join(home, ".bun", "bin"),
+      join(home, ".volta", "bin"),
+      join(systemRoot, "System32", "WindowsPowerShell", "v1.0"),
+      join(systemRoot, "Sysnative", "WindowsPowerShell", "v1.0"),
+      join(systemRoot, "System32"),
+      ...listDirs(join(home, ".nvm", "versions", "node")).map((dir) => join(dir, "bin")),
+    ];
+    return dirs.flatMap((dir) => names.map((name) => join(dir, name)));
+  }
+
+  const dirs = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    join(home, ".npm-global", "bin"),
+    join(home, ".local", "bin"),
+    join(home, ".bun", "bin"),
+    join(home, ".volta", "bin"),
+    ...listDirs(join(home, ".nvm", "versions", "node")).map((dir) => join(dir, "bin")),
+  ];
+  return dirs.flatMap((dir) => executableFileNames(command, platform).map((name) => join(dir, name)));
+}
+
+export function findExecutablePath(command: string, pathValue = defaultPathValue()): string | null {
+  for (const entry of pathEntries(pathValue)) {
+    for (const fileName of executableFileNames(command)) {
+      const candidate = join(entry, fileName);
+      if (isFile(candidate)) return candidate;
+    }
+  }
+
+  return executableCandidatePaths(command).find(isFile) || null;
+}
+
+export function buildToolPath(...toolPaths: Array<string | null | undefined>): string {
+  const dirs = toolPaths.filter((toolPath): toolPath is string => !!toolPath).map(dirname);
+  return mergePath(defaultPathValue(), dirs);
 }
 
 function mergePath(pathValue: string | undefined, entries: string[]): string {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { findCliPath } from "../../../../lib/cli-resolver";
+import { buildToolPath, findCliPath, findExecutablePath } from "../../../../lib/cli-resolver";
 
 const execFileAsync = promisify(execFile);
 
@@ -13,21 +13,43 @@ const CLI_PACKAGES = {
 
 type CliName = keyof typeof CLI_PACKAGES;
 
-function buildInstallCommand(cliName: CliName, pkg: string): { command: string; args: string[] } {
+function quoteForCmd(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function buildInstallCommand(cliName: CliName, pkg: string): { command: string; args: string[]; toolPath: string } {
   if (cliName === "antigravity") {
     if (process.platform === "win32") {
+      const powershellPath = findExecutablePath("powershell") || "powershell.exe";
       return {
-        command: "powershell.exe",
+        command: powershellPath,
         args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm https://antigravity.google/cli/install.ps1 | iex"],
+        toolPath: buildToolPath(powershellPath),
       };
     }
-    return { command: "bash", args: ["-lc", "curl -fsSL https://antigravity.google/cli/install.sh | bash"] };
+    const bashPath = findExecutablePath("bash") || "bash";
+    const curlPath = findExecutablePath("curl");
+    return {
+      command: bashPath,
+      args: ["-lc", "curl -fsSL https://antigravity.google/cli/install.sh | bash"],
+      toolPath: buildToolPath(bashPath, curlPath),
+    };
+  }
+
+  const npmPath = findExecutablePath("npm");
+  if (!npmPath) {
+    throw new Error("npm을 찾을 수 없습니다. Node.js와 npm이 먼저 설치되어 있어야 합니다.");
   }
 
   if (process.platform === "win32") {
-    return { command: "cmd.exe", args: ["/c", "npm", "install", "-g", pkg] };
+    const cmdPath = findExecutablePath("cmd") || "cmd.exe";
+    return {
+      command: cmdPath,
+      args: ["/d", "/s", "/c", `${quoteForCmd(npmPath)} install -g ${pkg}`],
+      toolPath: buildToolPath(cmdPath, npmPath),
+    };
   }
-  return { command: "npm", args: ["install", "-g", pkg] };
+  return { command: npmPath, args: ["install", "-g", pkg], toolPath: buildToolPath(npmPath) };
 }
 
 export async function POST(request: NextRequest) {
@@ -45,14 +67,25 @@ export async function POST(request: NextRequest) {
 
   const normalized = cliName as CliName;
   const pkg = CLI_PACKAGES[normalized];
-  const { command, args } = buildInstallCommand(normalized, pkg);
+  let command: string;
+  let args: string[];
+  let toolPath: string;
+  try {
+    ({ command, args, toolPath } = buildInstallCommand(normalized, pkg));
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : String(error) },
+      { status: 500 },
+    );
+  }
 
   try {
     const { stdout, stderr } = await execFileAsync(command, args, {
+      env: { ...process.env, PATH: toolPath, Path: toolPath },
       timeout: 120_000,
       maxBuffer: 1024 * 1024 * 5,
     });
-    const detectedPath = findCliPath(normalized);
+    const detectedPath = findCliPath(normalized, undefined, toolPath);
     return NextResponse.json({ ok: true, output: stdout || stderr, detectedPath: detectedPath ?? null });
   } catch (error) {
     const err = error as NodeJS.ErrnoException & { stderr?: string };
@@ -62,7 +95,11 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       );
     }
-    const detail = err.stderr?.trim().slice(-400) || err.message || "알 수 없는 오류";
+    const rawDetail = err.stderr?.trim() || err.message || "알 수 없는 오류";
+    const detail =
+      rawDetail.toLowerCase().includes("not recognized") || rawDetail.includes("찾을 수 없습니다")
+        ? "설치 도구를 실행하지 못했습니다. Node.js를 설치한 뒤 앱을 다시 실행하거나 CLI 경로를 직접 지정해 주세요."
+        : rawDetail.slice(-400);
     return NextResponse.json({ ok: false, error: detail }, { status: 500 });
   }
 }
