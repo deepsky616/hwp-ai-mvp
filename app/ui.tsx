@@ -89,6 +89,7 @@ export default function HwpAiMvp() {
           codexStatus={settings.codexStatus}
           aiTestMessage={settings.aiTestMessage}
           oauthLoginUrl={settings.oauthLoginUrl}
+          oauthUserCode={settings.oauthUserCode}
           isPolling={settings.isPolling}
           codexCliPath={settings.codexCliPath}
           setCodexCliPath={settings.setCodexCliPath}

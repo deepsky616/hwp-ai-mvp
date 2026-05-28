@@ -192,6 +192,7 @@ type SettingsPanelProps = {
   codexStatus: CodexStatus | null;
   aiTestMessage: string;
   oauthLoginUrl: string;
+  oauthUserCode: string;
   isPolling: boolean;
   codexCliPath: string;
   setCodexCliPath: (p: string) => void;
@@ -209,7 +210,7 @@ type SettingsPanelProps = {
 // ─── 제공자 메타데이터 ────────────────────────────────────────────────────────
 
 const PROVIDERS: { id: AiProvider; label: string; badge: string }[] = [
-  { id: "codex-cli",  label: "Codex CLI",  badge: "OpenAI 구독" },
+  { id: "openai-oauth", label: "OpenAI 계정", badge: "OAuth" },
   { id: "gemini-cli", label: "Gemini CLI", badge: "Google 구독" },
   { id: "openai",     label: "OpenAI",     badge: "API 키" },
   { id: "gemini",     label: "Gemini",     badge: "API 키" },
@@ -245,18 +246,19 @@ function WizardModal({
   step, setStep, completeSetup, ...props
 }: { step: "pick" | "detail"; setStep: (s: "pick" | "detail") => void; completeSetup: () => void } & SettingsPanelProps) {
   const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli";
+  const isOpenAiOauth = props.aiProvider === "openai-oauth";
   const isApi = props.aiProvider === "openai" || props.aiProvider === "gemini";
   const isLocal = props.aiProvider === "ollama" || props.aiProvider === "mlx" || props.aiProvider === "custom";
 
   useEffect(() => {
-    if (step === "detail" && isCli) {
+    if (step === "detail" && (isCli || isOpenAiOauth)) {
       const authed =
         props.aiProvider === "gemini-cli"
           ? props.geminiLoginStatus?.authenticated
           : props.codexStatus?.authenticated;
       if (authed) completeSetup();
     }
-  }, [props.codexStatus?.authenticated, props.geminiLoginStatus?.authenticated, step, isCli, props.aiProvider, completeSetup]);
+  }, [props.codexStatus?.authenticated, props.geminiLoginStatus?.authenticated, step, isCli, isOpenAiOauth, props.aiProvider, completeSetup]);
 
   const cliName: CliInstallName = props.aiProvider === "gemini-cli" ? "gemini" : "codex";
 
@@ -295,6 +297,26 @@ function WizardModal({
               >
                 ← {PROVIDERS.find((p) => p.id === props.aiProvider)?.label}
               </button>
+
+              {/* OpenAI 계정 로그인 */}
+              {isOpenAiOauth && (
+                <>
+                  <button onClick={props.onOauthLogin} disabled={props.isPolling}>
+                    {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
+                  </button>
+                  {props.oauthUserCode && (
+                    <p className="settingsHint">
+                      로그인 화면에서 코드 <strong>{props.oauthUserCode}</strong>를 입력해 주세요.
+                    </p>
+                  )}
+                  {props.oauthLoginUrl && (
+                    <p className="settingsHint">
+                      로그인 창이 열리지 않으면{" "}
+                      <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">여기를 클릭</a>해 주세요.
+                    </p>
+                  )}
+                </>
+              )}
 
               {/* CLI 제공자 */}
               {isCli && (
@@ -386,7 +408,8 @@ function WizardModal({
 function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onResetSetup: () => void }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli" || props.aiProvider === "openai-oauth";
+  const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli";
+  const isOpenAiOauth = props.aiProvider === "openai-oauth";
   const isLocal = props.aiProvider === "ollama" || props.aiProvider === "mlx" || props.aiProvider === "custom";
   const usesApiKey = props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom";
   const cliName: CliInstallName = props.aiProvider === "gemini-cli" ? "gemini" : "codex";
@@ -394,6 +417,8 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
   const isConnected =
     props.aiProvider === "gemini-cli"
       ? (props.geminiLoginStatus?.authenticated ?? false)
+      : props.aiProvider === "openai-oauth"
+        ? (props.codexStatus?.authenticated ?? false)
       : props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom"
         ? !!props.aiApiKey
         : (props.codexStatus?.authenticated ?? false);
@@ -402,6 +427,8 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
     props.aiTestMessage ||
     (props.aiProvider === "gemini-cli"
       ? (props.geminiLoginStatus?.message ?? "상태 확인 중...")
+      : props.aiProvider === "openai-oauth"
+        ? (props.codexStatus?.message ?? "상태 확인 중...")
       : (props.codexStatus?.message ?? "상태 확인 중..."));
 
   return (
@@ -450,6 +477,36 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
             onChange={props.setSelectedModel}
           />
         </div>
+
+        {/* 연결 설정 — OpenAI 계정 */}
+        {isOpenAiOauth && (
+          <div className="settingSection">
+            <p className="settingSectionLabel">로그인</p>
+            <div className="connectionRow">
+              <button onClick={props.onOauthLogin} disabled={props.isPolling}>
+                {props.isPolling ? "확인 중..." : "OpenAI 계정으로 로그인"}
+              </button>
+              <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
+            </div>
+            {props.oauthUserCode && (
+              <p className="settingsHint">
+                로그인 화면에서 코드 <strong>{props.oauthUserCode}</strong>를 입력해 주세요.
+              </p>
+            )}
+            {props.codexStatus && (
+              <p className="settingsHint">
+                <span className={`statusDot ${props.codexStatus.authenticated ? "good" : "warn"}`} />
+                {props.codexStatus.message}
+              </p>
+            )}
+            {props.oauthLoginUrl && (
+              <p className="settingsHint">
+                로그인 창이 열리지 않으면{" "}
+                <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">여기를 클릭</a>해 주세요.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* 연결 설정 — CLI */}
         {isCli && (

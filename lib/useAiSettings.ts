@@ -34,6 +34,15 @@ export type GeminiLoginStatus = {
   message: string;
 };
 
+type CodexLoginStartResponse = {
+  ok?: boolean;
+  authUrl?: string;
+  sessionId?: string;
+  userCode?: string;
+  interval?: number;
+  error?: string;
+};
+
 export function useAiSettings() {
   const [aiProvider, setAiProvider] = useState<AiProvider>("openai");
   const [aiApiKey, setAiApiKey] = useState("");
@@ -45,6 +54,7 @@ export function useAiSettings() {
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [aiTestMessage, setAiTestMessage] = useState("");
   const [oauthLoginUrl, setOauthLoginUrl] = useState("");
+  const [oauthUserCode, setOauthUserCode] = useState("");
 
   const codexSessionRef = useRef<{ sessionId: string } | null>(null);
   const [isPolling, setIsPolling] = useState(false);
@@ -102,7 +112,7 @@ export function useAiSettings() {
       savedProvider &&
       ["openai", "codex-cli", "gemini", "gemini-cli", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
     )
-      setAiProvider(savedProvider === "openai-oauth" ? "codex-cli" : savedProvider);
+      setAiProvider(savedProvider === "codex-cli" ? "openai-oauth" : savedProvider);
     if (savedKey) setAiApiKey(savedKey);
     if (savedUrl) setAiBaseUrl(savedUrl);
     if (savedCodexPath) setCodexCliPath(savedCodexPath);
@@ -115,6 +125,26 @@ export function useAiSettings() {
     setModels(next);
     setSelectedModel((current) => (next.includes(current) ? current : next[0]));
   }, [aiProvider]);
+
+  useEffect(() => {
+    if (aiProvider !== "openai-oauth") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/codex/models");
+        const data = (await res.json()) as { models?: string[] };
+        if (!cancelled && Array.isArray(data.models) && data.models.length > 0) {
+          setModels(data.models);
+          setSelectedModel((current) => (data.models?.includes(current) ? current : data.models![0]));
+        }
+      } catch {
+        // 기본 모델 목록을 유지합니다.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [aiProvider, codexStatus?.authenticated]);
 
   useEffect(() => {
     window.localStorage.setItem("hwp-ai-model", selectedModel);
@@ -143,11 +173,13 @@ export function useAiSettings() {
           codexSessionRef.current = null;
           setIsPolling(false);
           setAiTestMessage("로그인이 완료되었습니다. 설정을 불러오는 중...");
+          setOauthUserCode("");
           await refreshCodexSettings();
           setAiTestMessage("로그인이 완료되었습니다.");
         } else if (data.status === "error") {
           codexSessionRef.current = null;
           setIsPolling(false);
+          setOauthUserCode("");
           setAiTestMessage(`로그인 확인 중 오류가 발생했습니다: ${data.error ?? "다시 시도해 주세요."}`);
         }
       } catch {
@@ -225,31 +257,33 @@ export function useAiSettings() {
   }, [effectiveAiSettings]);
 
   const startOpenAiOauthLogin = useCallback(async () => {
-    setAiProvider("codex-cli");
-    setAiTestMessage("Codex 로그인을 시작합니다...");
+    setAiProvider("openai-oauth");
+    setAiTestMessage("OpenAI 로그인을 시작합니다...");
     setOauthLoginUrl("");
+    setOauthUserCode("");
     setIsPolling(false);
     codexSessionRef.current = null;
 
     try {
-      const res = await fetch("/api/codex/login/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codexCliPath: codexCliPath.trim() || undefined }),
-      });
-      const data = (await res.json()) as { ok?: boolean; authUrl?: string; sessionId?: string; error?: string };
+      const res = await fetch("/api/codex/login/start", { method: "POST" });
+      const data = (await res.json()) as CodexLoginStartResponse;
       if (!res.ok || !data.authUrl || !data.sessionId) {
         throw new Error(data.error ?? "로그인을 시작하지 못했습니다");
       }
       window.open(data.authUrl, "_blank", "width=600,height=760,popup=yes");
       setOauthLoginUrl(data.authUrl);
+      setOauthUserCode(data.userCode ?? "");
       codexSessionRef.current = { sessionId: data.sessionId };
       setIsPolling(true);
-      setAiTestMessage("브라우저에서 OpenAI 계정으로 로그인해 주세요. 완료되면 자동으로 감지됩니다.");
+      setAiTestMessage(
+        data.userCode
+          ? `브라우저에서 OpenAI 계정으로 로그인한 뒤 코드 ${data.userCode}를 입력해 주세요.`
+          : "브라우저에서 OpenAI 계정으로 로그인해 주세요. 완료되면 자동으로 감지됩니다.",
+      );
     } catch (error) {
       setAiTestMessage(error instanceof Error ? error.message : String(error));
     }
-  }, [codexCliPath]);
+  }, []);
 
   return {
     aiProvider,
@@ -265,6 +299,7 @@ export function useAiSettings() {
     effectiveAiSettings,
     aiTestMessage,
     oauthLoginUrl,
+    oauthUserCode,
     isPolling,
     codexCliPath,
     setCodexCliPath,

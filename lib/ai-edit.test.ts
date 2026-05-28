@@ -92,6 +92,51 @@ describe("인공지능 문서 수정", () => {
     }));
   });
 
+  it("OpenAI 계정 로그인 제공자는 저장된 OAuth 토큰으로 직접 호출합니다", async () => {
+    const dir = join(tmpdir(), `hwp-ai-oauth-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+    tempDirs.push(dir);
+    process.env.CODEX_AUTH_FILE = join(dir, "auth.json");
+    delete process.env.OPENAI_API_KEY;
+    writeFileSync(process.env.CODEX_AUTH_FILE, JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: { access_token: "oauth-token" },
+    }), "utf8");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify({ patches: [] }) } }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestDocumentPatches({
+      instruction: "띄어쓰기 수정",
+      blocks,
+      aiSettings: { provider: "openai-oauth", model: "gpt-4.1-mini" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.openai.com/v1/chat/completions", expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: "Bearer oauth-token" }),
+    }));
+  });
+
+  it("OpenAI 계정 로그인 연결 테스트는 저장된 OAuth 토큰을 사용합니다", async () => {
+    const dir = join(tmpdir(), `hwp-ai-oauth-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+    tempDirs.push(dir);
+    process.env.CODEX_AUTH_FILE = join(dir, "auth.json");
+    writeFileSync(process.env.CODEX_AUTH_FILE, JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: { access_token: "oauth-token" },
+    }), "utf8");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(testAiConnection({ provider: "openai-oauth" })).resolves.toMatchObject({ ok: true });
+    expect(fetchMock).toHaveBeenCalledWith("https://api.openai.com/v1/models", expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: "Bearer oauth-token" }),
+    }));
+  });
+
   it("올라마 호환 서버로 문서 패치를 요청합니다", async () => {
     process.env.CODEX_AUTH_FILE = "/tmp/없는-파일.json";
     delete process.env.OPENAI_API_KEY;

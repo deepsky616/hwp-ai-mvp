@@ -1,124 +1,78 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { resolveCli } from "./cli-resolver";
+import {
+  exchangeCodeForTokens,
+  pollDeviceAuth,
+  saveAuthTokens,
+  startDeviceAuth,
+} from "./openai-device-auth";
 
-// codex login은 로컬 콜백 서버(localhost:1455)를 띄우고 브라우저 OAuth를 진행합니다.
-// 자체 device-flow와 달리 codex_cli_simplified_flow 토큰을 저장하므로 codex 백엔드에서 정상 동작합니다.
-
-const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
-const URL_WAIT_MS = 15_000;
-const AUTH_URL_REGEX = /(https:\/\/auth\.openai\.com\/oauth\/authorize\?\S+)/;
+const LOGIN_TIMEOUT_MS = 15 * 60 * 1000;
 
 type SessionStatus = "pending" | "complete" | "error";
 
 type LoginSession = {
-  child: ChildProcess;
+  deviceAuthId: string;
+  userCode: string;
   authUrl: string;
+  interval: number;
   status: SessionStatus;
   error?: string;
-  timer: NodeJS.Timeout;
+  expiresAt: number;
 };
 
-// Next.js는 API route별로 모듈을 격리할 수 있어, 모듈 레벨 변수는 start/poll 간 공유되지 않습니다.
-// globalThis에 보관해 route 간 동일한 세션 맵을 공유합니다.
 const globalForLogin = globalThis as unknown as { __codexLoginSessions?: Map<string, LoginSession> };
 const sessions = (globalForLogin.__codexLoginSessions ??= new Map<string, LoginSession>());
 
-function cleanupPendingSessions(): void {
+function cleanupExpiredSessions(): void {
+  const now = Date.now();
   for (const [id, session] of sessions) {
-    if (session.status === "pending") {
-      clearTimeout(session.timer);
-      try { session.child.kill("SIGTERM"); } catch { /* ignore */ }
-      sessions.delete(id);
-    }
+    if (session.expiresAt <= now || session.status !== "pending") sessions.delete(id);
   }
 }
 
-export async function startCodexLogin(customPath?: string): Promise<{ authUrl: string; sessionId: string }> {
-  cleanupPendingSessions();
+export async function startCodexLogin(): Promise<{
+  authUrl: string;
+  sessionId: string;
+  userCode: string;
+  interval: number;
+}> {
+  cleanupExpiredSessions();
 
-  const resolved = resolveCli("codex", customPath);
+  const start = await startDeviceAuth();
   const sessionId = randomBytes(16).toString("hex");
+  const authUrl = start.verification_uri;
 
-  return new Promise<{ authUrl: string; sessionId: string }>((resolve, reject) => {
-    const child = spawn(resolved.command, [...resolved.argsPrefix, "login"], {
-      env: { ...process.env, PATH: resolved.envPath },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let settled = false;
-    let captured = "";
-
-    const handleOutput = (buf: Buffer) => {
-      if (settled) return;
-      captured += buf.toString();
-      const match = captured.match(AUTH_URL_REGEX);
-      if (!match) return;
-      settled = true;
-      clearTimeout(urlTimeout);
-      const authUrl = match[1];
-      const timer = setTimeout(() => {
-        const session = sessions.get(sessionId);
-        if (session && session.status === "pending") {
-          session.status = "error";
-          session.error = "로그인 시간이 초과되었습니다 (10분).";
-          try { session.child.kill("SIGTERM"); } catch { /* ignore */ }
-        }
-      }, LOGIN_TIMEOUT_MS);
-      sessions.set(sessionId, { child, authUrl, status: "pending", timer });
-      resolve({ authUrl, sessionId });
-    };
-
-    child.stdout?.on("data", handleOutput);
-    child.stderr?.on("data", handleOutput);
-
-    child.on("exit", (code) => {
-      const session = sessions.get(sessionId);
-      if (!session) return;
-      clearTimeout(session.timer);
-      if (session.status === "pending") {
-        if (code === 0) {
-          session.status = "complete";
-        } else {
-          session.status = "error";
-          session.error = `codex login이 비정상 종료되었습니다 (코드 ${code}).`;
-        }
-      }
-    });
-
-    child.on("error", (err) => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(urlTimeout);
-        reject(new Error(`codex login 실행에 실패했습니다: ${err.message}`));
-        return;
-      }
-      const session = sessions.get(sessionId);
-      if (session && session.status === "pending") {
-        session.status = "error";
-        session.error = err.message;
-      }
-    });
-
-    const urlTimeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      try { child.kill("SIGTERM"); } catch { /* ignore */ }
-      reject(new Error("codex login URL을 가져오지 못했습니다. 'codex login status'로 CLI 상태를 확인해 주세요."));
-    }, URL_WAIT_MS);
+  sessions.set(sessionId, {
+    deviceAuthId: start.device_auth_id,
+    userCode: start.user_code,
+    authUrl,
+    interval: start.interval,
+    status: "pending",
+    expiresAt: Date.now() + LOGIN_TIMEOUT_MS,
   });
+
+  return { authUrl, sessionId, userCode: start.user_code, interval: start.interval };
 }
 
-export function pollCodexLogin(sessionId: string): { status: SessionStatus; error?: string } {
+export async function pollCodexLogin(sessionId: string): Promise<{ status: SessionStatus; error?: string }> {
+  cleanupExpiredSessions();
   const session = sessions.get(sessionId);
   if (!session) return { status: "error", error: "로그인 세션을 찾을 수 없습니다. 다시 시도해 주세요." };
-  if (session.status === "complete") {
+  if (session.expiresAt <= Date.now()) {
+    sessions.delete(sessionId);
+    return { status: "error", error: "로그인 시간이 초과되었습니다. 다시 시도해 주세요." };
+  }
+
+  try {
+    const result = await pollDeviceAuth(session.deviceAuthId, session.userCode);
+    if (result.status === "pending") return { status: "pending" };
+
+    const tokens = await exchangeCodeForTokens(result.authorization_code, result.code_verifier);
+    saveAuthTokens(tokens);
     sessions.delete(sessionId);
     return { status: "complete" };
-  }
-  if (session.status === "error") {
+  } catch (error) {
     sessions.delete(sessionId);
-    return { status: "error", error: session.error };
+    return { status: "error", error: error instanceof Error ? error.message : String(error) };
   }
-  return { status: "pending" };
 }
