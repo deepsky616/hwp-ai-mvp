@@ -11,7 +11,7 @@ function osModule(): typeof import("node:os") {
   return nodeRequire("node:os") as typeof import("node:os");
 }
 
-export type CliName = "codex" | "gemini";
+export type CliName = "codex" | "gemini" | "antigravity";
 
 export type ResolvedCli = {
   command: string;
@@ -50,36 +50,44 @@ export function expandHome(input: string): string {
   return input;
 }
 
+function commandName(name: CliName): string {
+  return name === "antigravity" ? "agy" : name;
+}
+
 function cliFileNames(name: CliName, platform = process.platform): string[] {
-  return platform === "win32" ? [`${name}.cmd`, `${name}.exe`, `${name}.ps1`, name] : [name];
+  const command = commandName(name);
+  return platform === "win32" ? [`${command}.cmd`, `${command}.exe`, `${command}.ps1`, command] : [command];
 }
 
 function candidatePaths(name: CliName, platform = process.platform): string[] {
   const home = osModule().homedir();
+  const command = commandName(name);
   const nvmBins = listDirs(join(home, ".nvm", "versions", "node"))
-    .map((dir) => join(dir, "bin", platform === "win32" ? `${name}.cmd` : name));
+    .map((dir) => join(dir, "bin", platform === "win32" ? `${command}.cmd` : command));
 
   if (platform === "win32") {
     const appData = process.env.APPDATA || join(home, "AppData", "Roaming");
     const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local");
     return [
-      join(appData, "npm", `${name}.cmd`),
-      join(appData, "npm", `${name}.exe`),
-      join(localAppData, "pnpm", `${name}.cmd`),
-      join(home, ".bun", "bin", `${name}.exe`),
-      join(home, ".volta", "bin", `${name}.exe`),
+      join(appData, "npm", `${command}.cmd`),
+      join(appData, "npm", `${command}.exe`),
+      join(localAppData, "pnpm", `${command}.cmd`),
+      join(localAppData, "agy", "bin", "agy.exe"),
+      join(localAppData, "agy", "bin", "agy.cmd"),
+      join(home, ".bun", "bin", `${command}.exe`),
+      join(home, ".volta", "bin", `${command}.exe`),
       ...nvmBins,
     ];
   }
 
   return [
-    `/opt/homebrew/bin/${name}`,
-    `/usr/local/bin/${name}`,
-    `/usr/bin/${name}`,
-    join(home, ".npm-global", "bin", name),
-    join(home, ".local", "bin", name),
-    join(home, ".bun", "bin", name),
-    join(home, ".volta", "bin", name),
+    `/opt/homebrew/bin/${command}`,
+    `/usr/local/bin/${command}`,
+    `/usr/bin/${command}`,
+    join(home, ".npm-global", "bin", command),
+    join(home, ".local", "bin", command),
+    join(home, ".bun", "bin", command),
+    join(home, ".volta", "bin", command),
     ...nvmBins,
   ];
 }
@@ -107,7 +115,7 @@ function mergePath(pathValue: string | undefined, entries: string[]): string {
 export function resolveCli(name: CliName, customPath?: string, pathValue = process.env.PATH || ""): ResolvedCli {
   const cliPath = findCliPath(name, customPath, pathValue);
   if (!cliPath) {
-    throw new Error(`${name} CLI를 찾을 수 없습니다. CLI를 설치하거나 설정에서 실행 파일 경로를 직접 지정해 주세요.`);
+    throw new Error(`${commandName(name)} CLI를 찾을 수 없습니다. CLI를 설치하거나 설정에서 실행 파일 경로를 직접 지정해 주세요.`);
   }
 
   if (process.platform === "win32" && name === "codex" && /codex\.cmd$/i.test(cliPath)) {

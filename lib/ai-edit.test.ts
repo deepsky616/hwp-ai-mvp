@@ -236,4 +236,68 @@ describe("인공지능 문서 수정", () => {
       expect.any(Function),
     );
   });
+
+  it("Antigravity CLI로 문서 패치를 요청합니다", async () => {
+    const agyPath = tempCli("agy");
+    const execFileMock = vi.fn((command, args, options, callback) => {
+      const realCallback = (typeof options === "function" ? options : callback) as Function;
+      realCallback(null, JSON.stringify({ patches: [] }), "");
+      return {} as childProcess.ChildProcess;
+    }) as unknown as typeof childProcess.execFile;
+    setExecFileForTest(execFileMock);
+
+    await requestDocumentPatches({
+      instruction: "띄어쓰기 수정",
+      blocks,
+      aiSettings: { provider: "antigravity-cli", model: "Gemini 3.5 Flash (High)" },
+    });
+
+    expect(execFileMock).toHaveBeenCalledWith(
+      agyPath,
+      expect.arrayContaining(["--prompt"]),
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("Antigravity CLI 연결 테스트는 agy 프롬프트 실행으로 확인합니다", async () => {
+    const agyPath = tempCli("agy");
+    const execFileMock = vi.fn((command, args, options, callback) => {
+      const realCallback = (typeof options === "function" ? options : callback) as Function;
+      realCallback(null, "OK", "");
+      return {} as childProcess.ChildProcess;
+    }) as unknown as typeof childProcess.execFile;
+    setExecFileForTest(execFileMock);
+
+    await expect(testAiConnection({ provider: "antigravity-cli" })).resolves.toMatchObject({ ok: true });
+    expect(execFileMock).toHaveBeenCalledWith(
+      agyPath,
+      expect.arrayContaining(["--prompt", "로그인과 실행 상태 확인입니다. OK만 출력하세요."]),
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("Antigravity CLI가 --prompt를 지원하지 않으면 -p로 재시도합니다", async () => {
+    const agyPath = tempCli("agy");
+    const execFileMock = vi.fn((command, args, options, callback) => {
+      const realCallback = (typeof options === "function" ? options : callback) as Function;
+      if ((args as string[]).includes("--prompt")) {
+        realCallback(new Error("unknown flag: --prompt"), "", "unknown flag: --prompt");
+      } else {
+        realCallback(null, "OK", "");
+      }
+      return {} as childProcess.ChildProcess;
+    }) as unknown as typeof childProcess.execFile;
+    setExecFileForTest(execFileMock);
+
+    await expect(testAiConnection({ provider: "antigravity-cli" })).resolves.toMatchObject({ ok: true });
+    expect(execFileMock).toHaveBeenNthCalledWith(
+      2,
+      agyPath,
+      expect.arrayContaining(["-p", "로그인과 실행 상태 확인입니다. OK만 출력하세요."]),
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
 });

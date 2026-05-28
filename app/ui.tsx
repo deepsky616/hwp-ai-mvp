@@ -95,12 +95,15 @@ export default function HwpAiMvp() {
           setCodexCliPath={settings.setCodexCliPath}
           geminiCliPath={settings.geminiCliPath}
           setGeminiCliPath={settings.setGeminiCliPath}
+          antigravityCliPath={settings.antigravityCliPath}
+          setAntigravityCliPath={settings.setAntigravityCliPath}
           geminiLoginStatus={settings.geminiLoginStatus}
           isGeminiPolling={settings.isGeminiPolling}
           onTest={settings.testAiSettings}
           onRefresh={settings.refreshCodexSettings}
           onOauthLogin={settings.startOpenAiOauthLogin}
           onGeminiLogin={settings.startGeminiOauthLogin}
+          onAntigravityLogin={settings.startAntigravityOauthLogin}
           onClose={() => setSettingsOpen(false)}
         />
       )}

@@ -5,8 +5,17 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export type AiProvider = "openai" | "codex-cli" | "gemini" | "gemini-cli" | "openai-oauth" | "ollama" | "mlx" | "custom";
-type CliName = "codex" | "gemini";
+export type AiProvider =
+  | "openai"
+  | "codex-cli"
+  | "gemini"
+  | "gemini-cli"
+  | "antigravity-cli"
+  | "openai-oauth"
+  | "ollama"
+  | "mlx"
+  | "custom";
+type CliName = "codex" | "gemini" | "antigravity";
 
 export type AiSettings = {
   provider?: AiProvider;
@@ -15,6 +24,7 @@ export type AiSettings = {
   model?: string;
   codexCliPath?: string;
   geminiCliPath?: string;
+  antigravityCliPath?: string;
 };
 
 export type AiEditRequest = {
@@ -97,7 +107,7 @@ function describeAuthFailure(text: string): string | null {
     lower.includes("sign in again") ||
     lower.includes("could not be refreshed")
   ) {
-    return "로그인 인증이 만료되었거나 무효화되었습니다. 터미널에서 'codex login'(또는 'gemini')으로 다시 로그인한 뒤 시도해 주세요.";
+    return "로그인 인증이 만료되었거나 무효화되었습니다. 설정에서 해당 CLI 로그인 버튼을 다시 눌러 주세요.";
   }
   return null;
 }
@@ -341,6 +351,35 @@ async function requestPatchesWithGeminiCli(request: AiEditRequest): Promise<Docu
   return parseJsonFromText(stdout).patches ?? [];
 }
 
+async function execAntigravityPrompt(prompt: string, customPath?: string): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await execCliAsync("antigravity", ["--prompt", prompt], undefined, customPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    if (!message.includes("unknown") && !message.includes("invalid") && !message.includes("flag")) throw error;
+  }
+
+  try {
+    return await execCliAsync("antigravity", ["-p", prompt], undefined, customPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    if (!message.includes("unknown") && !message.includes("invalid") && !message.includes("flag")) throw error;
+  }
+
+  return execCliAsync("antigravity", [], undefined, customPath, `${prompt}\n`);
+}
+
+async function requestPatchesWithAntigravityCli(request: AiEditRequest): Promise<DocumentPatch[]> {
+  const customPath = request.aiSettings?.antigravityCliPath;
+  const prompt = [
+    buildPlainPrompt(request),
+    "",
+    "중요: 설명 없이 JSON만 출력하세요.",
+  ].join("\n");
+  const { stdout } = await execAntigravityPrompt(prompt, customPath);
+  return parseJsonFromText(stdout).patches ?? [];
+}
+
 export async function testAiConnection(settings: AiSettings): Promise<{ ok: boolean; message: string }> {
   const provider = settings.provider || "openai";
 
@@ -357,6 +396,14 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
   if (provider === "gemini-cli") {
     await execCliAsync("gemini", ["--version"], undefined, settings.geminiCliPath);
     return { ok: true, message: "Gemini CLI를 사용할 수 있습니다. 터미널에서 Gemini CLI 로그인이 완료되어 있어야 합니다." };
+  }
+
+  if (provider === "antigravity-cli") {
+    const { stdout } = await execAntigravityPrompt("로그인과 실행 상태 확인입니다. OK만 출력하세요.", settings.antigravityCliPath);
+    return {
+      ok: true,
+      message: stdout.trim() ? "Antigravity CLI 연결에 성공했습니다." : "Antigravity CLI를 사용할 수 있습니다.",
+    };
   }
 
   if (provider === "ollama") {
@@ -397,6 +444,7 @@ export async function requestDocumentPatches(request: AiEditRequest): Promise<Do
   if (provider === "codex-cli" || provider === "openai-oauth") return requestPatchesWithCodexCli(request);
   if (provider === "gemini") return requestPatchesWithGeminiApi(request);
   if (provider === "gemini-cli") return requestPatchesWithGeminiCli(request);
+  if (provider === "antigravity-cli") return requestPatchesWithAntigravityCli(request);
 
   if (provider === "ollama") return requestPatchesWithOllama(request);
 

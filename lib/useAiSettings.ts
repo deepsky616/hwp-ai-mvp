@@ -1,12 +1,22 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type AiProvider = "openai" | "codex-cli" | "gemini" | "gemini-cli" | "openai-oauth" | "ollama" | "mlx" | "custom";
+export type AiProvider =
+  | "openai"
+  | "codex-cli"
+  | "gemini"
+  | "gemini-cli"
+  | "antigravity-cli"
+  | "openai-oauth"
+  | "ollama"
+  | "mlx"
+  | "custom";
 
 const OPENAI_MODELS = ["gpt-5.4-mini", "gpt-5.3-instant", "gpt-5.4-thinking", "gpt-5.4-pro"];
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash", "gemini-3-pro"];
 
 function modelsForProvider(provider: AiProvider): string[] {
+  if (provider === "antigravity-cli") return [];
   if (provider === "gemini" || provider === "gemini-cli") return GEMINI_MODELS;
   if (provider === "openai" || provider === "codex-cli" || provider === "openai-oauth") return OPENAI_MODELS;
   return [];
@@ -19,6 +29,7 @@ export type AiSettings = {
   model: string;
   codexCliPath?: string;
   geminiCliPath?: string;
+  antigravityCliPath?: string;
 };
 
 export type CodexStatus = {
@@ -50,6 +61,7 @@ export function useAiSettings() {
   const [selectedModel, setSelectedModel] = useState(OPENAI_MODELS[0]);
   const [codexCliPath, setCodexCliPath] = useState("");
   const [geminiCliPath, setGeminiCliPath] = useState("");
+  const [antigravityCliPath, setAntigravityCliPath] = useState("");
   const [models, setModels] = useState<string[]>(OPENAI_MODELS);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [aiTestMessage, setAiTestMessage] = useState("");
@@ -71,8 +83,9 @@ export function useAiSettings() {
       model: selectedModel,
       codexCliPath: codexCliPath.trim() || undefined,
       geminiCliPath: geminiCliPath.trim() || undefined,
+      antigravityCliPath: antigravityCliPath.trim() || undefined,
     }),
-    [aiProvider, aiApiKey, aiBaseUrl, selectedModel, codexCliPath, geminiCliPath],
+    [aiProvider, aiApiKey, aiBaseUrl, selectedModel, codexCliPath, geminiCliPath, antigravityCliPath],
   );
 
   const refreshCodexSettings = useCallback(async () => {
@@ -108,15 +121,17 @@ export function useAiSettings() {
     const savedUrl = window.localStorage.getItem("hwp-ai-base-url");
     const savedCodexPath = window.localStorage.getItem("hwp-ai-codex-cli-path");
     const savedGeminiPath = window.localStorage.getItem("hwp-ai-gemini-cli-path");
+    const savedAntigravityPath = window.localStorage.getItem("hwp-ai-antigravity-cli-path");
     if (
       savedProvider &&
-      ["openai", "codex-cli", "gemini", "gemini-cli", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
+      ["openai", "codex-cli", "gemini", "gemini-cli", "antigravity-cli", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
     )
       setAiProvider(savedProvider === "codex-cli" ? "openai-oauth" : savedProvider);
     if (savedKey) setAiApiKey(savedKey);
     if (savedUrl) setAiBaseUrl(savedUrl);
     if (savedCodexPath) setCodexCliPath(savedCodexPath);
     if (savedGeminiPath) setGeminiCliPath(savedGeminiPath);
+    if (savedAntigravityPath) setAntigravityCliPath(savedAntigravityPath);
   }, [refreshCodexSettings, refreshGeminiStatus]);
 
   useEffect(() => {
@@ -157,7 +172,9 @@ export function useAiSettings() {
     else window.localStorage.removeItem("hwp-ai-codex-cli-path");
     if (geminiCliPath.trim()) window.localStorage.setItem("hwp-ai-gemini-cli-path", geminiCliPath.trim());
     else window.localStorage.removeItem("hwp-ai-gemini-cli-path");
-  }, [selectedModel, aiProvider, aiApiKey, aiBaseUrl, codexCliPath, geminiCliPath]);
+    if (antigravityCliPath.trim()) window.localStorage.setItem("hwp-ai-antigravity-cli-path", antigravityCliPath.trim());
+    else window.localStorage.removeItem("hwp-ai-antigravity-cli-path");
+  }, [selectedModel, aiProvider, aiApiKey, aiBaseUrl, codexCliPath, geminiCliPath, antigravityCliPath]);
 
   useEffect(() => {
     if (!isPolling) return;
@@ -240,6 +257,29 @@ export function useAiSettings() {
     }
   }, []);
 
+  const startAntigravityOauthLogin = useCallback(async () => {
+    setAiProvider("antigravity-cli");
+    setAiTestMessage("Antigravity CLI를 실행해 Google 로그인을 확인하는 중입니다...");
+    try {
+      const res = await fetch("/api/ai/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          aiSettings: {
+            provider: "antigravity-cli",
+            model: selectedModel,
+            antigravityCliPath: antigravityCliPath.trim() || undefined,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Antigravity 연결 테스트에 실패했습니다");
+      setAiTestMessage(data.message || "Antigravity CLI 연결에 성공했습니다.");
+    } catch (error) {
+      setAiTestMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, [antigravityCliPath, selectedModel]);
+
   const testAiSettings = useCallback(async () => {
     setAiTestMessage("연결을 확인하는 중입니다...");
     try {
@@ -309,6 +349,8 @@ export function useAiSettings() {
     setCodexCliPath,
     geminiCliPath,
     setGeminiCliPath,
+    antigravityCliPath,
+    setAntigravityCliPath,
     geminiLoginStatus,
     isGeminiPolling,
     refreshCodexSettings,
@@ -316,5 +358,6 @@ export function useAiSettings() {
     testAiSettings,
     startOpenAiOauthLogin,
     startGeminiOauthLogin,
+    startAntigravityOauthLogin,
   };
 }

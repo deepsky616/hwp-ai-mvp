@@ -8,11 +8,22 @@ const execFileAsync = promisify(execFile);
 const CLI_PACKAGES = {
   codex: "@openai/codex",
   gemini: "@google/gemini-cli",
+  antigravity: "antigravity",
 } as const;
 
 type CliName = keyof typeof CLI_PACKAGES;
 
-function buildInstallCommand(pkg: string): { command: string; args: string[] } {
+function buildInstallCommand(cliName: CliName, pkg: string): { command: string; args: string[] } {
+  if (cliName === "antigravity") {
+    if (process.platform === "win32") {
+      return {
+        command: "powershell.exe",
+        args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm https://antigravity.google/cli/install.ps1 | iex"],
+      };
+    }
+    return { command: "bash", args: ["-lc", "curl -fsSL https://antigravity.google/cli/install.sh | bash"] };
+  }
+
   if (process.platform === "win32") {
     return { command: "cmd.exe", args: ["/c", "npm", "install", "-g", pkg] };
   }
@@ -32,15 +43,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "지원하지 않는 CLI입니다" }, { status: 400 });
   }
 
-  const pkg = CLI_PACKAGES[cliName as CliName];
-  const { command, args } = buildInstallCommand(pkg);
+  const normalized = cliName as CliName;
+  const pkg = CLI_PACKAGES[normalized];
+  const { command, args } = buildInstallCommand(normalized, pkg);
 
   try {
     const { stdout, stderr } = await execFileAsync(command, args, {
       timeout: 120_000,
       maxBuffer: 1024 * 1024 * 5,
     });
-    const detectedPath = findCliPath(cliName as CliName);
+    const detectedPath = findCliPath(normalized);
     return NextResponse.json({ ok: true, output: stdout || stderr, detectedPath: detectedPath ?? null });
   } catch (error) {
     const err = error as NodeJS.ErrnoException & { stderr?: string };

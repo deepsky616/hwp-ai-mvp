@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AiProvider, CodexStatus, GeminiLoginStatus } from "../lib/useAiSettings";
 
-type CliInstallName = "codex" | "gemini";
+type CliInstallName = "codex" | "gemini" | "antigravity";
 
 // ─── 공통 서브컴포넌트 ───────────────────────────────────────────────────────
 
@@ -17,8 +17,18 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: {
 
   useEffect(() => { setIsWindows(/Win/i.test(navigator.userAgent)); }, []);
 
-  const pkg = cliName === "codex" ? "@openai/codex" : "@google/gemini-cli";
-  const label = cliName === "codex" ? "Codex CLI" : "Gemini CLI";
+  const pkg =
+    cliName === "codex"
+      ? "@openai/codex"
+      : cliName === "gemini"
+        ? "@google/gemini-cli"
+        : "https://antigravity.google/cli/install.sh";
+  const label =
+    cliName === "codex"
+      ? "Codex CLI"
+      : cliName === "gemini"
+        ? "Gemini CLI"
+        : "Antigravity CLI";
 
   const install = useCallback(async () => {
     setPhase("installing");
@@ -53,7 +63,11 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: {
     <div className="cliInstallBox">
       <p className="settingsHint">
         {isWindows ? "PowerShell:" : "터미널:"}{" "}
-        <code className="cliCode">{`npm install -g ${pkg}`}</code>
+        <code className="cliCode">
+          {cliName === "antigravity"
+            ? (isWindows ? "irm https://antigravity.google/cli/install.ps1 | iex" : "curl -fsSL https://antigravity.google/cli/install.sh | bash")
+            : `npm install -g ${pkg}`}
+        </code>
       </p>
       {isWindows && (
         <p className="settingsHint">
@@ -102,7 +116,12 @@ function CliPathBox({ cliName, path, setPath, onDetected }: {
     }
   }, [cliName, setPath, onDetected]);
 
-  const placeholder = cliName === "codex" ? "/usr/local/bin/codex" : "/usr/local/bin/gemini";
+  const placeholder =
+    cliName === "codex"
+      ? "/usr/local/bin/codex"
+      : cliName === "gemini"
+        ? "/usr/local/bin/gemini"
+        : "~/.local/bin/agy";
 
   return (
     <div className="cliPathBox">
@@ -198,12 +217,15 @@ type SettingsPanelProps = {
   setCodexCliPath: (p: string) => void;
   geminiCliPath: string;
   setGeminiCliPath: (p: string) => void;
+  antigravityCliPath: string;
+  setAntigravityCliPath: (p: string) => void;
   geminiLoginStatus: GeminiLoginStatus | null;
   isGeminiPolling: boolean;
   onTest: () => void;
   onRefresh: () => void;
   onOauthLogin: () => void;
   onGeminiLogin: () => void;
+  onAntigravityLogin: () => void;
   onClose: () => void;
 };
 
@@ -211,6 +233,7 @@ type SettingsPanelProps = {
 
 const PROVIDERS: { id: AiProvider; label: string; badge: string }[] = [
   { id: "openai-oauth", label: "OpenAI 계정", badge: "OAuth" },
+  { id: "antigravity-cli", label: "Antigravity CLI", badge: "Google OAuth" },
   { id: "gemini-cli", label: "Gemini CLI", badge: "Google 구독" },
   { id: "openai",     label: "OpenAI",     badge: "API 키" },
   { id: "gemini",     label: "Gemini",     badge: "API 키" },
@@ -245,7 +268,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
 function WizardModal({
   step, setStep, completeSetup, ...props
 }: { step: "pick" | "detail"; setStep: (s: "pick" | "detail") => void; completeSetup: () => void } & SettingsPanelProps) {
-  const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli";
+  const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli" || props.aiProvider === "antigravity-cli";
   const isOpenAiOauth = props.aiProvider === "openai-oauth";
   const isApi = props.aiProvider === "openai" || props.aiProvider === "gemini";
   const isLocal = props.aiProvider === "ollama" || props.aiProvider === "mlx" || props.aiProvider === "custom";
@@ -255,12 +278,19 @@ function WizardModal({
       const authed =
         props.aiProvider === "gemini-cli"
           ? props.geminiLoginStatus?.authenticated
+          : props.aiProvider === "antigravity-cli"
+            ? false
           : props.codexStatus?.authenticated;
       if (authed) completeSetup();
     }
   }, [props.codexStatus?.authenticated, props.geminiLoginStatus?.authenticated, step, isCli, isOpenAiOauth, props.aiProvider, completeSetup]);
 
-  const cliName: CliInstallName = props.aiProvider === "gemini-cli" ? "gemini" : "codex";
+  const cliName: CliInstallName =
+    props.aiProvider === "gemini-cli"
+      ? "gemini"
+      : props.aiProvider === "antigravity-cli"
+        ? "antigravity"
+        : "codex";
 
   return (
     <div className="modalOverlay" onClick={props.onClose}>
@@ -301,6 +331,17 @@ function WizardModal({
               {/* OpenAI 계정 로그인 */}
               {isOpenAiOauth && (
                 <>
+                  <CliInstallBox
+                    cliName="codex"
+                    onInstalled={props.onRefresh}
+                    onDetected={props.setCodexCliPath}
+                  />
+                  <CliPathBox
+                    cliName="codex"
+                    path={props.codexCliPath}
+                    setPath={props.setCodexCliPath}
+                    onDetected={props.onRefresh}
+                  />
                   <button onClick={props.onOauthLogin} disabled={props.isPolling}>
                     {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
                   </button>
@@ -329,6 +370,10 @@ function WizardModal({
                   {props.aiProvider === "gemini-cli" ? (
                     <button onClick={props.onGeminiLogin} disabled={props.isGeminiPolling}>
                       {props.isGeminiPolling ? "로그인 확인 중..." : "Google 계정으로 로그인"}
+                    </button>
+                  ) : props.aiProvider === "antigravity-cli" ? (
+                    <button onClick={props.onAntigravityLogin}>
+                      Google 계정으로 로그인
                     </button>
                   ) : (
                     <button onClick={props.onOauthLogin} disabled={props.isPolling}>
@@ -409,14 +454,22 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli";
+  const isAntigravity = props.aiProvider === "antigravity-cli";
   const isOpenAiOauth = props.aiProvider === "openai-oauth";
   const isLocal = props.aiProvider === "ollama" || props.aiProvider === "mlx" || props.aiProvider === "custom";
   const usesApiKey = props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom";
-  const cliName: CliInstallName = props.aiProvider === "gemini-cli" ? "gemini" : "codex";
+  const cliName: CliInstallName =
+    props.aiProvider === "gemini-cli"
+      ? "gemini"
+      : props.aiProvider === "antigravity-cli"
+        ? "antigravity"
+        : "codex";
 
   const isConnected =
     props.aiProvider === "gemini-cli"
       ? (props.geminiLoginStatus?.authenticated ?? false)
+      : props.aiProvider === "antigravity-cli"
+        ? !!props.antigravityCliPath || props.aiTestMessage.includes("Antigravity CLI 연결에 성공")
       : props.aiProvider === "openai-oauth"
         ? (props.codexStatus?.authenticated ?? false)
       : props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom"
@@ -427,6 +480,8 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
     props.aiTestMessage ||
     (props.aiProvider === "gemini-cli"
       ? (props.geminiLoginStatus?.message ?? "상태 확인 중...")
+      : props.aiProvider === "antigravity-cli"
+        ? (props.aiTestMessage || "Antigravity CLI 경로를 감지하거나 설치해 주세요.")
       : props.aiProvider === "openai-oauth"
         ? (props.codexStatus?.message ?? "상태 확인 중...")
       : (props.codexStatus?.message ?? "상태 확인 중..."));
@@ -482,6 +537,17 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
         {isOpenAiOauth && (
           <div className="settingSection">
             <p className="settingSectionLabel">로그인</p>
+            <CliInstallBox
+              cliName="codex"
+              onInstalled={props.onRefresh}
+              onDetected={props.setCodexCliPath}
+            />
+            <CliPathBox
+              cliName="codex"
+              path={props.codexCliPath}
+              setPath={props.setCodexCliPath}
+              onDetected={props.onRefresh}
+            />
             <div className="connectionRow">
               <button onClick={props.onOauthLogin} disabled={props.isPolling}>
                 {props.isPolling ? "확인 중..." : "OpenAI 계정으로 로그인"}
@@ -505,6 +571,28 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
                 <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">여기를 클릭</a>해 주세요.
               </p>
             )}
+          </div>
+        )}
+
+        {/* 연결 설정 — Antigravity */}
+        {isAntigravity && (
+          <div className="settingSection">
+            <p className="settingSectionLabel">로그인</p>
+            <CliInstallBox
+              cliName="antigravity"
+              onInstalled={props.onTest}
+              onDetected={props.setAntigravityCliPath}
+            />
+            <CliPathBox
+              cliName="antigravity"
+              path={props.antigravityCliPath}
+              setPath={props.setAntigravityCliPath}
+              onDetected={props.onTest}
+            />
+            <div className="connectionRow">
+              <button onClick={props.onAntigravityLogin}>Google 계정으로 로그인</button>
+              <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
+            </div>
           </div>
         )}
 

@@ -36,6 +36,11 @@ describe("CLI resolver", () => {
     expect(findCliPath("codex", undefined, dir)).toBe(file);
   });
 
+  it("Antigravity CLI는 agy 실행 파일을 찾습니다", () => {
+    const { dir, file } = tempExecutable("agy");
+    expect(findCliPath("antigravity", undefined, dir)).toBe(file);
+  });
+
   it("해결된 CLI 디렉터리를 PATH 앞쪽에 병합합니다", () => {
     const { dir, file } = tempExecutable("gemini");
     const resolved = resolveCli("gemini", undefined, [`/usr/bin`, dir].join(delimiter));
