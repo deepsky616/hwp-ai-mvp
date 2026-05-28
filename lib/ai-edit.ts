@@ -344,7 +344,7 @@ async function requestPatchesWithGeminiCli(request: AiEditRequest): Promise<Docu
 export async function testAiConnection(settings: AiSettings): Promise<{ ok: boolean; message: string }> {
   const provider = settings.provider || "openai";
 
-  if (provider === "codex-cli") {
+  if (provider === "codex-cli" || provider === "openai-oauth") {
     migrateCodexAuthIfNeeded();
     const { stdout, stderr } = await execCliAsync("codex", ["login", "status"], undefined, settings.codexCliPath);
     const combined = `${stdout}\n${stderr}`.toLowerCase();
@@ -352,16 +352,6 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
       return { ok: true, message: "Codex 계정 로그인이 확인되었습니다." };
     }
     return { ok: false, message: "Codex 로그인이 필요합니다. 'OpenAI 계정으로 로그인'을 눌러 주세요." };
-  }
-
-  if (provider === "openai-oauth") {
-    const authorization = await getOpenAiAuthorizationAsync();
-    if (!authorization) throw new Error("OpenAI 계정 로그인이 필요합니다.");
-    const response = await fetch("https://api.openai.com/v1/models", {
-      headers: { Authorization: authorization.header },
-    });
-    if (!response.ok) throw new Error(`OpenAI 계정 연결 테스트에 실패했습니다: ${await response.text()}`);
-    return { ok: true, message: "OpenAI 계정 로그인 연결에 성공했습니다." };
   }
 
   if (provider === "gemini-cli") {
@@ -404,12 +394,7 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
 export async function requestDocumentPatches(request: AiEditRequest): Promise<DocumentPatch[]> {
   const provider = request.aiSettings?.provider || "openai";
 
-  if (provider === "codex-cli") return requestPatchesWithCodexCli(request);
-  if (provider === "openai-oauth") {
-    const authorization = await getOpenAiAuthorizationAsync();
-    if (!authorization) throw new Error("OpenAI 계정 로그인이 필요합니다.");
-    return requestPatchesWithOpenAiCompatible(request, "https://api.openai.com", authorization.header);
-  }
+  if (provider === "codex-cli" || provider === "openai-oauth") return requestPatchesWithCodexCli(request);
   if (provider === "gemini") return requestPatchesWithGeminiApi(request);
   if (provider === "gemini-cli") return requestPatchesWithGeminiCli(request);
 

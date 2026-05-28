@@ -9,6 +9,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: "error", error: "session_id가 필요합니다" }, { status: 400 });
   }
 
-  const result = await pollCodexLogin(sessionId);
+  const result = pollCodexLogin(sessionId);
   return NextResponse.json(result);
 }

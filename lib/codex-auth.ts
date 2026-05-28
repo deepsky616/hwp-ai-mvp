@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { refreshOpenAiTokens, saveAuthTokens } from "./openai-device-auth";
 
 export type AuthSource = "codex-oauth" | "api-key" | "missing";
 
@@ -18,7 +17,6 @@ type CodexAuthFile = {
   auth_mode?: string;
   OPENAI_API_KEY?: string;
   last_refresh?: string;
-  expires_at?: string;
   tokens?: {
     access_token?: string;
     refresh_token?: string;
@@ -110,48 +108,11 @@ export function getOpenAiAuthorization(): { header: string; source: Exclude<Auth
   return null;
 }
 
-function isExpiringSoon(auth: CodexAuthFile): boolean {
-  if (!auth.expires_at) return false;
-  const time = Date.parse(auth.expires_at);
-  if (!Number.isFinite(time)) return false;
-  return time <= Date.now() + 60_000;
-}
-
 export async function getOpenAiAuthorizationAsync(): Promise<{
   header: string;
   source: Exclude<AuthSource, "missing">;
 } | null> {
-  const auth = readCodexAuthFile();
-  const accessToken = auth?.tokens?.access_token?.trim();
-  const refreshToken = auth?.tokens?.refresh_token?.trim();
-
-  if (accessToken && auth && !isExpiringSoon(auth)) {
-    return { header: `Bearer ${accessToken}`, source: "codex-oauth" };
-  }
-
-  if (refreshToken) {
-    try {
-      const refreshed = await refreshOpenAiTokens(refreshToken);
-      saveAuthTokens({
-        ...refreshed,
-        refresh_token: refreshed.refresh_token || refreshToken,
-        id_token: refreshed.id_token || auth?.tokens?.id_token,
-        account_id: refreshed.account_id || auth?.tokens?.account_id,
-      });
-      if (refreshed.access_token?.trim()) {
-        return { header: `Bearer ${refreshed.access_token}`, source: "codex-oauth" };
-      }
-    } catch {
-      if (accessToken) return { header: `Bearer ${accessToken}`, source: "codex-oauth" };
-    }
-  }
-
-  if (accessToken) return { header: `Bearer ${accessToken}`, source: "codex-oauth" };
-
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (apiKey) return { header: `Bearer ${apiKey}`, source: "api-key" };
-
-  return null;
+  return getOpenAiAuthorization();
 }
 
 export function normalizeModelList(models: Array<{ id?: unknown }>): string[] {

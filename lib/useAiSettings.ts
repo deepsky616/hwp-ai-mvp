@@ -265,7 +265,11 @@ export function useAiSettings() {
     codexSessionRef.current = null;
 
     try {
-      const res = await fetch("/api/codex/login/start", { method: "POST" });
+      const res = await fetch("/api/codex/login/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codexCliPath: codexCliPath.trim() || undefined }),
+      });
       const data = (await res.json()) as CodexLoginStartResponse;
       if (!res.ok || !data.authUrl || !data.sessionId) {
         throw new Error(data.error ?? "로그인을 시작하지 못했습니다");
@@ -283,7 +287,7 @@ export function useAiSettings() {
     } catch (error) {
       setAiTestMessage(error instanceof Error ? error.message : String(error));
     }
-  }, []);
+  }, [codexCliPath]);
 
   return {
     aiProvider,
