@@ -17,23 +17,58 @@ function quoteForCmd(value: string): string {
   return `"${value.replace(/"/g, '\\"')}"`;
 }
 
-function buildInstallCommand(cliName: CliName, pkg: string): { command: string; args: string[]; toolPath: string } {
-  if (cliName === "antigravity") {
-    if (process.platform === "win32") {
-      const powershellPath = findExecutablePath("powershell") || "powershell.exe";
-      return {
-        command: powershellPath,
-        args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm https://antigravity.google/cli/install.ps1 | iex"],
-        toolPath: buildToolPath(powershellPath),
-      };
-    }
-    const bashPath = findExecutablePath("bash") || "bash";
-    const curlPath = findExecutablePath("curl");
+type InstallCommand = {
+  command: string;
+  args: string[];
+  toolPath: string;
+  env?: Record<string, string>;
+};
+
+function buildScriptInstallCommand(
+  cliName: "codex" | "antigravity",
+  winUrl: string,
+  unixUrl: string,
+): InstallCommand {
+  const env: Record<string, string> | undefined =
+    cliName === "codex"
+      ? { CODEX_NON_INTERACTIVE: "1" }
+      : undefined;
+
+  if (process.platform === "win32") {
+    const powershellPath = findExecutablePath("powershell") || "powershell.exe";
     return {
-      command: bashPath,
-      args: ["-lc", "curl -fsSL https://antigravity.google/cli/install.sh | bash"],
-      toolPath: buildToolPath(bashPath, curlPath),
+      command: powershellPath,
+      args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `irm ${winUrl} | iex`],
+      toolPath: buildToolPath(powershellPath),
+      env,
     };
+  }
+
+  const bashPath = findExecutablePath("bash") || "bash";
+  const curlPath = findExecutablePath("curl");
+  return {
+    command: bashPath,
+    args: ["-lc", `curl -fsSL ${unixUrl} | sh`],
+    toolPath: buildToolPath(bashPath, curlPath),
+    env,
+  };
+}
+
+function buildInstallCommand(cliName: CliName, pkg: string): InstallCommand {
+  if (cliName === "codex") {
+    return buildScriptInstallCommand(
+      "codex",
+      "https://chatgpt.com/codex/install.ps1",
+      "https://chatgpt.com/codex/install.sh",
+    );
+  }
+
+  if (cliName === "antigravity") {
+    return buildScriptInstallCommand(
+      "antigravity",
+      "https://antigravity.google/cli/install.ps1",
+      "https://antigravity.google/cli/install.sh",
+    );
   }
 
   const npmPath = findExecutablePath("npm");
@@ -70,8 +105,13 @@ export async function POST(request: NextRequest) {
   let command: string;
   let args: string[];
   let toolPath: string;
+  let extraEnv: Record<string, string> | undefined;
   try {
-    ({ command, args, toolPath } = buildInstallCommand(normalized, pkg));
+    const install = buildInstallCommand(normalized, pkg);
+    command = install.command;
+    args = install.args;
+    toolPath = install.toolPath;
+    extraEnv = install.env;
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : String(error) },
@@ -81,7 +121,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const { stdout, stderr } = await execFileAsync(command, args, {
-      env: { ...process.env, PATH: toolPath, Path: toolPath },
+      env: { ...process.env, ...extraEnv, PATH: toolPath, Path: toolPath },
       timeout: 120_000,
       maxBuffer: 1024 * 1024 * 5,
     });
@@ -91,14 +131,14 @@ export async function POST(request: NextRequest) {
     const err = error as NodeJS.ErrnoException & { stderr?: string };
     if (err.code === "ENOENT") {
       return NextResponse.json(
-        { ok: false, error: "npm을 찾을 수 없습니다. Node.js와 npm이 먼저 설치되어 있어야 합니다." },
+        { ok: false, error: "설치 도구를 찾을 수 없습니다. 인터넷 연결과 시스템 기본 도구를 확인하거나 실행 파일 경로를 직접 지정해 주세요." },
         { status: 500 },
       );
     }
     const rawDetail = err.stderr?.trim() || err.message || "알 수 없는 오류";
     const detail =
       rawDetail.toLowerCase().includes("not recognized") || rawDetail.includes("찾을 수 없습니다")
-        ? "설치 도구를 실행하지 못했습니다. Node.js를 설치한 뒤 앱을 다시 실행하거나 CLI 경로를 직접 지정해 주세요."
+        ? "설치 도구를 실행하지 못했습니다. 앱을 다시 실행하거나 CLI 경로를 직접 지정해 주세요."
         : rawDetail.slice(-400);
     return NextResponse.json({ ok: false, error: detail }, { status: 500 });
   }

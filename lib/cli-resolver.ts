@@ -79,6 +79,8 @@ function candidatePaths(name: CliName, platform = process.platform): string[] {
     return [
       join(appData, "npm", `${command}.cmd`),
       join(appData, "npm", `${command}.exe`),
+      join(localAppData, "Programs", "OpenAI", "Codex", "bin", "codex.exe"),
+      join(localAppData, "Programs", "OpenAI", "Codex", "bin", "codex.cmd"),
       join(localAppData, "pnpm", `${command}.cmd`),
       join(localAppData, "agy", "bin", "agy.exe"),
       join(localAppData, "agy", "bin", "agy.cmd"),

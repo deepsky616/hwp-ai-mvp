@@ -18,11 +18,9 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: {
   useEffect(() => { setIsWindows(/Win/i.test(navigator.userAgent)); }, []);
 
   const pkg =
-    cliName === "codex"
-      ? "@openai/codex"
-      : cliName === "gemini"
-        ? "@google/gemini-cli"
-        : "https://antigravity.google/cli/install.sh";
+    cliName === "gemini"
+      ? "@google/gemini-cli"
+      : "";
   const label =
     cliName === "codex"
       ? "Codex CLI"
@@ -64,8 +62,10 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: {
       <p className="settingsHint">
         {isWindows ? "PowerShell:" : "터미널:"}{" "}
         <code className="cliCode">
-          {cliName === "antigravity"
-            ? (isWindows ? "irm https://antigravity.google/cli/install.ps1 | iex" : "curl -fsSL https://antigravity.google/cli/install.sh | bash")
+          {cliName === "codex"
+            ? (isWindows ? "irm https://chatgpt.com/codex/install.ps1 | iex" : "curl -fsSL https://chatgpt.com/codex/install.sh | sh")
+            : cliName === "antigravity"
+              ? (isWindows ? "irm https://antigravity.google/cli/install.ps1 | iex" : "curl -fsSL https://antigravity.google/cli/install.sh | bash")
             : `npm install -g ${pkg}`}
         </code>
       </p>
