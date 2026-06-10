@@ -42,6 +42,70 @@ export type TableCellPatch = {
 
 export type DocumentPatch = ParagraphPatch | TableCellPatch;
 
+// AI가 생성한 패치는 신뢰할 수 없다. 좌표가 실제 추출 블록과 정확히 일치하고
+// 타입·정수 좌표·text 길이가 유효한 패치만 통과시켜, 모델 환각으로 인한
+// 엉뚱한 위치 오적용을 방지한다.
+const MAX_PATCH_TEXT_LENGTH = 100_000;
+
+function isNonNegativeInt(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function matchesBlock(patch: DocumentPatch, block: DocumentBlock): boolean {
+  if (patch.type !== block.type) return false;
+  if (patch.type === "paragraph" && block.type === "paragraph") {
+    return patch.sectionIndex === block.sectionIndex && patch.paragraphIndex === block.paragraphIndex;
+  }
+  if (patch.type === "tableCell" && block.type === "tableCell") {
+    return (
+      patch.sectionIndex === block.sectionIndex &&
+      patch.parentParagraphIndex === block.parentParagraphIndex &&
+      patch.controlIndex === block.controlIndex &&
+      patch.cellIndex === block.cellIndex &&
+      patch.cellParagraphIndex === block.cellParagraphIndex
+    );
+  }
+  return false;
+}
+
+function isValidPatch(raw: unknown): raw is DocumentPatch {
+  if (!raw || typeof raw !== "object") return false;
+  const p = raw as Record<string, unknown>;
+  if (typeof p.text !== "string" || p.text.length > MAX_PATCH_TEXT_LENGTH) return false;
+  if (p.type === "paragraph") {
+    return isNonNegativeInt(p.sectionIndex) && isNonNegativeInt(p.paragraphIndex);
+  }
+  if (p.type === "tableCell") {
+    return (
+      isNonNegativeInt(p.sectionIndex) &&
+      isNonNegativeInt(p.parentParagraphIndex) &&
+      isNonNegativeInt(p.controlIndex) &&
+      isNonNegativeInt(p.cellIndex) &&
+      isNonNegativeInt(p.cellParagraphIndex)
+    );
+  }
+  return false;
+}
+
+function patchKey(patch: DocumentPatch): string {
+  if (patch.type === "paragraph") {
+    return `p:${patch.sectionIndex}:${patch.paragraphIndex}`;
+  }
+  return `c:${patch.sectionIndex}:${patch.parentParagraphIndex}:${patch.controlIndex}:${patch.cellIndex}:${patch.cellParagraphIndex}`;
+}
+
+export function validatePatches(rawPatches: unknown, blocks: DocumentBlock[]): DocumentPatch[] {
+  if (!Array.isArray(rawPatches)) return [];
+  const valid = rawPatches.filter(
+    (raw): raw is DocumentPatch => isValidPatch(raw) && blocks.some((block) => matchesBlock(raw, block)),
+  );
+  // 같은 좌표를 가리키는 중복 패치는 마지막 것만 남겨, 적용 시 앞 패치가
+  // 덮여 사라지는 비결정적 동작을 막는다.
+  const deduped = new Map<string, DocumentPatch>();
+  for (const patch of valid) deduped.set(patchKey(patch), patch);
+  return [...deduped.values()];
+}
+
 export function buildTableMatrix(cells: TableCellBlock[]): string[][] {
   const cols = Math.max(1, ...cells.map((c) => c.cols ?? 1));
   const rows = Math.max(1, ...cells.map((c) => c.rows ?? Math.ceil((c.cellIndex + 1) / cols)));

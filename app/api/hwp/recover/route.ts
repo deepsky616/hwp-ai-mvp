@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { markdownToImportHtml } from "../../../../lib/hwp-load";
+import { exceedsRecoverContentLength, isRecoverFileSizeAllowed, markdownToImportHtml } from "../../../../lib/hwp-load";
+import { createRateLimiter } from "../../../../lib/rate-limit";
 
 export const runtime = "nodejs";
+
+const limiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 
 type ParseFailureLike = {
   success: false;
@@ -27,6 +30,10 @@ function isVercelServerless() {
   return process.env.VERCEL === "1";
 }
 
+// 문서 변환 의존성(char code 107,111,114,100,111,99)은 무겁다. 소스에 리터럴
+// 패키지명이나 정적 import가 남으면 Next/Vercel이 이를 서버리스 함수 번들에 정적
+// 포함시켜 함수 크기 제한을 초과한다. 그래서 패키지명을 런타임에 조합하고 동적
+// import로만 로드한다. (이 동작은 route.test.ts가 강제 — 변경 시 함께 확인할 것)
 async function loadKordoc() {
   const importer = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<KordocModule>;
   const packageName = String.fromCharCode(107, 111, 114, 100, 111, 99);
@@ -34,6 +41,14 @@ async function loadKordoc() {
 }
 
 export async function POST(request: NextRequest) {
+  const rl = limiter("local");
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
+    );
+  }
+
   if (isVercelServerless()) {
     return NextResponse.json(
       {
@@ -44,11 +59,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 본문을 메모리에 적재하기 전에 Content-Length로 과대 요청을 먼저 거른다.
+  if (exceedsRecoverContentLength(request.headers.get("content-length"))) {
+    return NextResponse.json(
+      { error: "파일이 너무 큽니다 (최대 50MB)", code: "FILE_TOO_LARGE" },
+      { status: 413 },
+    );
+  }
+
   const form = await request.formData();
   const file = form.get("file");
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "파일을 찾지 못했습니다" }, { status: 400 });
+  }
+
+  if (!isRecoverFileSizeAllowed(file.size)) {
+    return NextResponse.json(
+      { error: "파일이 너무 크거나 비어 있습니다 (최대 50MB)", code: "FILE_TOO_LARGE" },
+      { status: 413 },
+    );
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());

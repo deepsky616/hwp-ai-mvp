@@ -1,4 +1,5 @@
 import { getOpenAiAuthorizationAsync, migrateCodexAuthIfNeeded } from "./codex-auth";
+import { validatePatches } from "./document";
 import type { DocumentBlock, DocumentPatch } from "./document";
 import * as childProcess from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -64,11 +65,26 @@ function sanitizeModel(model?: string): string {
   return trimmed;
 }
 
-function sanitizeBaseUrl(baseUrl: string | undefined, fallback: string): string {
+// 클라우드 인스턴스 메타데이터/링크로컬 주소는 SSRF로 자격증명 탈취에 악용되므로 차단한다.
+// localhost/사설망은 로컬 LLM(ollama, mlx) 정당 사용을 위해 허용한다.
+export function isBlockedSsrfHost(hostname: string): boolean {
+  // 끝의 점(FQDN trailing dot)을 제거해 metadata.google.internal. 같은 우회를 막는다.
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+  // IPv4 링크로컬 169.254.0.0/16 (AWS/GCP/Azure 메타데이터 169.254.169.254 포함)
+  if (/^169\.254\./.test(host)) return true;
+  // IPv6 링크로컬 fe80::/10 및 유니크 로컬 fc00::/7
+  if (/^fe80:/.test(host) || /^f[cd][0-9a-f]{2}:/.test(host)) return true;
+  // 클라우드 메타데이터 호스트네임
+  if (host === "metadata.google.internal" || host === "metadata") return true;
+  return false;
+}
+
+export function sanitizeBaseUrl(baseUrl: string | undefined, fallback: string): string {
   const trimmed = baseUrl?.trim() || fallback;
   try {
     const url = new URL(trimmed);
     if (!["http:", "https:"].includes(url.protocol)) return fallback;
+    if (isBlockedSsrfHost(url.hostname)) return fallback;
     return trimmed.replace(/\/+$/, "");
   } catch {
     return fallback;
@@ -242,6 +258,8 @@ async function requestPatchesWithOpenAiCompatible(
   const response = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers,
+    // 사용자 지정 baseUrl이 메타데이터 주소로 리다이렉트되는 SSRF 우회를 막는다.
+    redirect: "manual",
     body: JSON.stringify({
       model: resolveRequestModel(request),
       messages: buildChatMessages(request),
@@ -263,6 +281,7 @@ async function requestPatchesWithOllama(request: AiEditRequest): Promise<Documen
   const response = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    redirect: "manual",
     body: JSON.stringify({
       model: resolveRequestModel(request),
       messages: buildChatMessages(request),
@@ -408,7 +427,7 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
 
   if (provider === "ollama") {
     const baseUrl = sanitizeBaseUrl(settings.baseUrl, "http://localhost:11434");
-    const response = await fetch(`${baseUrl}/api/tags`);
+    const response = await fetch(`${baseUrl}/api/tags`, { redirect: "manual" });
     if (!response.ok) throw new Error(`연결 테스트에 실패했습니다: ${await response.text()}`);
     return { ok: true, message: "올라마 서버 연결에 성공했습니다." };
   }
@@ -433,12 +452,19 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
   if (key) headers.Authorization = `Bearer ${key}`;
   if (provider === "openai" && !key) throw new Error("API 키를 입력해 주세요.");
 
-  const response = await fetch(`${baseUrl}/v1/models`, { headers });
+  const response = await fetch(`${baseUrl}/v1/models`, { headers, redirect: "manual" });
   if (!response.ok) throw new Error(`연결 테스트에 실패했습니다: ${await response.text()}`);
   return { ok: true, message: "인공지능 서버 연결에 성공했습니다." };
 }
 
+// 신뢰할 수 없는 모델 출력은 그대로 적용하지 않는다. 좌표가 실제 추출 블록과
+// 일치하는 유효 패치만 반환해 오적용을 방지한다.
 export async function requestDocumentPatches(request: AiEditRequest): Promise<DocumentPatch[]> {
+  const raw = await resolveRawPatches(request);
+  return validatePatches(raw, request.blocks);
+}
+
+async function resolveRawPatches(request: AiEditRequest): Promise<DocumentPatch[]> {
   const provider = request.aiSettings?.provider || "openai";
 
   if (provider === "codex-cli" || provider === "openai-oauth") return requestPatchesWithCodexCli(request);

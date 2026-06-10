@@ -1,8 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { AiProvider, CodexStatus, GeminiLoginStatus } from "../lib/useAiSettings";
-
-type CliInstallName = "codex" | "gemini" | "antigravity";
+import { manualInstallCommand, type CliInstallName } from "../lib/cli-install-info";
 
 // ─── 공통 서브컴포넌트 ───────────────────────────────────────────────────────
 
@@ -17,10 +16,6 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: {
 
   useEffect(() => { setIsWindows(/Win/i.test(navigator.userAgent)); }, []);
 
-  const pkg =
-    cliName === "gemini"
-      ? "@google/gemini-cli"
-      : "";
   const label =
     cliName === "codex"
       ? "Codex CLI"
@@ -61,13 +56,7 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: {
     <div className="cliInstallBox">
       <p className="settingsHint">
         {isWindows ? "PowerShell:" : "터미널:"}{" "}
-        <code className="cliCode">
-          {cliName === "codex"
-            ? (isWindows ? "irm https://chatgpt.com/codex/install.ps1 | iex" : "curl -fsSL https://chatgpt.com/codex/install.sh | sh")
-            : cliName === "antigravity"
-              ? (isWindows ? "irm https://antigravity.google/cli/install.ps1 | iex" : "curl -fsSL https://antigravity.google/cli/install.sh | bash")
-            : `npm install -g ${pkg}`}
-        </code>
+        <code className="cliCode">{manualInstallCommand(cliName, isWindows)}</code>
       </p>
       {isWindows && (
         <p className="settingsHint">

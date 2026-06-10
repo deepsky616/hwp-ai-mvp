@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildToolPath, expandHome, findCliPath, findExecutablePath, resolveCli } from "./cli-resolver";
+import { buildToolPath, expandHome, findCliPath, findExecutablePath, isAllowedCliCustomPath, resolveCli } from "./cli-resolver";
 
 const tempDirs: string[] = [];
 
@@ -52,5 +52,19 @@ describe("CLI resolver", () => {
     const resolved = resolveCli("gemini", undefined, [`/usr/bin`, dir].join(delimiter));
     expect(resolved.command).toBe(file);
     expect(resolved.envPath.split(delimiter)[0]).toBe(dir);
+  });
+
+  it("CLI 이름과 다른 실행 파일명의 custom 경로는 실행하지 않는다", () => {
+    const { file } = tempExecutable("malware");
+    // 클라이언트가 임의 실행 파일을 custom 경로로 주입해도 그 경로를 그대로 반환하지 않는다
+    expect(findCliPath("codex", file, "")).not.toBe(file);
+  });
+
+  it("허용 목록 검증 함수는 올바른 basename의 절대경로만 통과시킨다", () => {
+    expect(isAllowedCliCustomPath("codex", "/usr/local/bin/codex")).toBe(true);
+    expect(isAllowedCliCustomPath("gemini", "/opt/bin/gemini")).toBe(true);
+    expect(isAllowedCliCustomPath("antigravity", "/opt/bin/agy")).toBe(true);
+    expect(isAllowedCliCustomPath("codex", "/tmp/evil/malware")).toBe(false);
+    expect(isAllowedCliCustomPath("codex", "codex")).toBe(false); // 상대경로 거부
   });
 });

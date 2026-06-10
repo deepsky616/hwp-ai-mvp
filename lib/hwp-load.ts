@@ -1,3 +1,19 @@
+// 복구 변환은 업로드 파일 전체를 메모리 버퍼로 읽으므로, 상한을 두어
+// 대용량 업로드로 인한 메모리 고갈(DoS)을 방지한다.
+export const MAX_RECOVER_FILE_BYTES = 50 * 1024 * 1024; // 50MB
+
+export function isRecoverFileSizeAllowed(size: number): boolean {
+  return Number.isFinite(size) && size > 0 && size <= MAX_RECOVER_FILE_BYTES;
+}
+
+// 본문을 메모리에 올리기 전에 Content-Length 헤더로 과대 요청을 먼저 거른다.
+// 헤더가 없거나 파싱 불가하면 false를 반환하고 이후 file.size 검사에 맡긴다.
+export function exceedsRecoverContentLength(headerValue: string | null): boolean {
+  if (!headerValue) return false;
+  const len = Number(headerValue);
+  return Number.isFinite(len) && len > MAX_RECOVER_FILE_BYTES;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")

@@ -8,6 +8,7 @@ import {
   extractResponseText,
   requestDocumentPatches,
   resetExecFileForTest,
+  sanitizeBaseUrl,
   setExecFileForTest,
   testAiConnection,
 } from "./ai-edit";
@@ -16,6 +17,40 @@ import * as childProcess from "node:child_process";
 
 const originalEnv = { ...process.env };
 const tempDirs: string[] = [];
+
+describe("sanitizeBaseUrl SSRF 방어", () => {
+  const fallback = "http://localhost:8080";
+
+  it("AWS/GCP/Azure 메타데이터 링크로컬 주소를 fallback으로 차단한다", () => {
+    expect(sanitizeBaseUrl("http://169.254.169.254", fallback)).toBe(fallback);
+    expect(sanitizeBaseUrl("http://169.254.0.1:80/latest/meta-data", fallback)).toBe(fallback);
+  });
+
+  it("GCP 메타데이터 호스트네임을 차단한다", () => {
+    expect(sanitizeBaseUrl("http://metadata.google.internal/", fallback)).toBe(fallback);
+  });
+
+  it("끝에 점이 붙은 호스트(FQDN trailing dot) 우회를 차단한다", () => {
+    expect(sanitizeBaseUrl("http://metadata.google.internal./", fallback)).toBe(fallback);
+    expect(sanitizeBaseUrl("http://169.254.169.254./latest", fallback)).toBe(fallback);
+  });
+
+  it("IPv6 링크로컬 주소를 차단한다", () => {
+    expect(sanitizeBaseUrl("http://[fe80::1]:8080", fallback)).toBe(fallback);
+  });
+
+  it("로컬 LLM(localhost) 주소는 허용한다", () => {
+    expect(sanitizeBaseUrl("http://localhost:11434", fallback)).toBe("http://localhost:11434");
+  });
+
+  it("정상적인 외부 https 주소는 허용한다", () => {
+    expect(sanitizeBaseUrl("https://api.example.com/", fallback)).toBe("https://api.example.com");
+  });
+
+  it("http/https가 아닌 스킴은 fallback으로 막는다", () => {
+    expect(sanitizeBaseUrl("file:///etc/passwd", fallback)).toBe(fallback);
+  });
+});
 
 const blocks: DocumentBlock[] = [
   { type: "paragraph", id: "p-0-0", sectionIndex: 0, paragraphIndex: 0, length: 8, text: "안녕 하십니까" },
@@ -151,6 +186,7 @@ describe("인공지능 문서 수정", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:11434/api/chat", expect.objectContaining({
       method: "POST",
+      redirect: "manual",
       headers: expect.objectContaining({ "Content-Type": "application/json" }),
     }));
     const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);

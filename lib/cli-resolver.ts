@@ -1,4 +1,4 @@
-import { delimiter, dirname, join, sep } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, sep } from "node:path";
 import { createRequire } from "node:module";
 
 const nodeRequire = createRequire(import.meta.url);
@@ -105,9 +105,17 @@ function candidatePaths(name: CliName, platform = process.platform): string[] {
   ];
 }
 
+// 클라이언트가 보낸 custom 경로로 임의 실행 파일이 구동되는 것을 막는다.
+// 절대경로이면서 basename이 해당 CLI의 허용 실행 파일명일 때만 통과시킨다.
+export function isAllowedCliCustomPath(name: CliName, customPath: string): boolean {
+  const expanded = expandHome(customPath.trim());
+  if (!isAbsolute(expanded)) return false;
+  return cliFileNames(name).includes(basename(expanded));
+}
+
 export function findCliPath(name: CliName, customPath?: string, pathValue = process.env.PATH || ""): string | null {
   const custom = customPath?.trim();
-  if (custom && isFile(expandHome(custom))) return expandHome(custom);
+  if (custom && isAllowedCliCustomPath(name, custom) && isFile(expandHome(custom))) return expandHome(custom);
 
   for (const entry of pathEntries(pathValue)) {
     for (const fileName of cliFileNames(name)) {
