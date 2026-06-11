@@ -1,11 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { AiProvider, CodexStatus, GeminiLoginStatus } from "../lib/useAiSettings";
-import { manualInstallCommand, type CliInstallName } from "../lib/cli-install-info";
+import { manualInstallCommand, requiresManualInstall, type CliInstallName } from "../lib/cli-install-info";
 
 // ─── 공통 서브컴포넌트 ───────────────────────────────────────────────────────
 
-function CliInstallBox({ cliName, onInstalled, onDetected }: {
+export function CliInstallBox({ cliName, onInstalled, onDetected }: {
   cliName: CliInstallName;
   onInstalled?: () => void;
   onDetected?: (path: string) => void;
@@ -52,6 +52,10 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: {
     }
   }, [cliName, onInstalled, onDetected]);
 
+  // codex/antigravity는 원격 스크립트 설치형이라 서버가 자동 설치하지 않는다.
+  // 모순된 '원클릭 설치' 버튼 대신, 위에 표시된 명령을 직접 실행하도록 안내한다.
+  const manualOnly = requiresManualInstall(cliName);
+
   return (
     <div className="cliInstallBox">
       <p className="settingsHint">
@@ -63,15 +67,23 @@ function CliInstallBox({ cliName, onInstalled, onDetected }: {
           실행 정책 오류 시: <code className="cliCode">Set-ExecutionPolicy RemoteSigned -Scope CurrentUser</code>
         </p>
       )}
-      <button
-        type="button"
-        className="secondaryButton"
-        onClick={install}
-        disabled={phase === "installing" || phase === "done"}
-      >
-        {phase === "installing" ? `${label} 설치 중...` : phase === "done" ? `${label} 설치 완료` : `${label} 원클릭 설치`}
-      </button>
-      {msg && <p className={phase === "error" ? "settingsHint errorHint" : "settingsHint"}>{msg}</p>}
+      {manualOnly ? (
+        <p className="settingsHint">
+          위 명령을 터미널에서 직접 실행한 뒤 아래 ‘경로 자동 감지’를 눌러 주세요.
+        </p>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="secondaryButton"
+            onClick={install}
+            disabled={phase === "installing" || phase === "done"}
+          >
+            {phase === "installing" ? `${label} 설치 중...` : phase === "done" ? `${label} 설치 완료` : `${label} 원클릭 설치`}
+          </button>
+          {msg && <p className={phase === "error" ? "settingsHint errorHint" : "settingsHint"}>{msg}</p>}
+        </>
+      )}
     </div>
   );
 }
