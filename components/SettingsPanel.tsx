@@ -21,7 +21,9 @@ export function CliInstallBox({ cliName, onInstalled, onDetected }: {
       ? "Codex CLI"
       : cliName === "gemini"
         ? "Gemini CLI"
-        : "Antigravity CLI";
+        : cliName === "claude"
+          ? "Claude CLI"
+          : "Antigravity CLI";
 
   const install = useCallback(async () => {
     setPhase("installing");
@@ -122,7 +124,9 @@ function CliPathBox({ cliName, path, setPath, onDetected }: {
       ? "/usr/local/bin/codex"
       : cliName === "gemini"
         ? "/usr/local/bin/gemini"
-        : "~/.local/bin/agy";
+        : cliName === "claude"
+          ? "/usr/local/bin/claude"
+          : "~/.local/bin/agy";
 
   return (
     <div className="cliPathBox">
@@ -220,6 +224,8 @@ type SettingsPanelProps = {
   setGeminiCliPath: (p: string) => void;
   antigravityCliPath: string;
   setAntigravityCliPath: (p: string) => void;
+  claudeCliPath: string;
+  setClaudeCliPath: (p: string) => void;
   geminiLoginStatus: GeminiLoginStatus | null;
   isGeminiPolling: boolean;
   onTest: () => void;
@@ -233,6 +239,7 @@ type SettingsPanelProps = {
 // ─── 제공자 메타데이터 ────────────────────────────────────────────────────────
 
 const PROVIDERS: { id: AiProvider; label: string; badge: string }[] = [
+  { id: "claude-cli",   label: "Claude",      badge: "Anthropic 구독" },
   { id: "openai-oauth", label: "OpenAI 계정", badge: "OAuth" },
   { id: "antigravity-cli", label: "Antigravity CLI", badge: "Google OAuth" },
   { id: "gemini-cli", label: "Gemini CLI", badge: "Google 구독" },
@@ -269,6 +276,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
 function WizardModal({
   step, setStep, completeSetup, ...props
 }: { step: "pick" | "detail"; setStep: (s: "pick" | "detail") => void; completeSetup: () => void } & SettingsPanelProps) {
+  const isClaudeCli = props.aiProvider === "claude-cli";
   const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli" || props.aiProvider === "antigravity-cli";
   const isOpenAiOauth = props.aiProvider === "openai-oauth";
   const isApi = props.aiProvider === "openai" || props.aiProvider === "gemini";
@@ -291,7 +299,9 @@ function WizardModal({
       ? "gemini"
       : props.aiProvider === "antigravity-cli"
         ? "antigravity"
-        : "codex";
+        : props.aiProvider === "claude-cli"
+          ? "claude"
+          : "codex";
 
   return (
     <div className="modalOverlay" onClick={props.onClose}>
@@ -328,6 +338,28 @@ function WizardModal({
               >
                 ← {PROVIDERS.find((p) => p.id === props.aiProvider)?.label}
               </button>
+
+              {/* Claude (Anthropic 구독) */}
+              {isClaudeCli && (
+                <>
+                  <CliInstallBox
+                    cliName="claude"
+                    onInstalled={props.onTest}
+                    onDetected={props.setClaudeCliPath}
+                  />
+                  <CliPathBox
+                    cliName="claude"
+                    path={props.claudeCliPath}
+                    setPath={props.setClaudeCliPath}
+                    onDetected={props.onTest}
+                  />
+                  <p className="settingsHint">
+                    설치 후 터미널에서 <code className="cliCode">claude</code>를 한 번 실행해 Anthropic 계정으로
+                    로그인해 주세요 (Pro/Max 구독이 그대로 사용됩니다). 로그인이 되어 있다면 바로 아래
+                    ‘연결 확인 후 시작’을 눌러 주세요.
+                  </p>
+                </>
+              )}
 
               {/* OpenAI 계정 로그인 */}
               {isOpenAiOauth && (
@@ -366,7 +398,13 @@ function WizardModal({
                   <CliInstallBox
                     cliName={cliName}
                     onInstalled={props.onTest}
-                    onDetected={cliName === "gemini" ? props.setGeminiCliPath : props.setCodexCliPath}
+                    onDetected={
+                      cliName === "gemini"
+                        ? props.setGeminiCliPath
+                        : cliName === "antigravity"
+                          ? props.setAntigravityCliPath
+                          : props.setCodexCliPath
+                    }
                   />
                   {props.aiProvider === "gemini-cli" ? (
                     <button onClick={props.onGeminiLogin} disabled={props.isGeminiPolling}>
@@ -456,6 +494,7 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
 
   const isCli = props.aiProvider === "codex-cli" || props.aiProvider === "gemini-cli";
   const isAntigravity = props.aiProvider === "antigravity-cli";
+  const isClaudeCli = props.aiProvider === "claude-cli";
   const isOpenAiOauth = props.aiProvider === "openai-oauth";
   const isLocal = props.aiProvider === "ollama" || props.aiProvider === "mlx" || props.aiProvider === "custom";
   const usesApiKey = props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom";
@@ -464,13 +503,17 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
       ? "gemini"
       : props.aiProvider === "antigravity-cli"
         ? "antigravity"
-        : "codex";
+        : props.aiProvider === "claude-cli"
+          ? "claude"
+          : "codex";
 
   const isConnected =
     props.aiProvider === "gemini-cli"
       ? (props.geminiLoginStatus?.authenticated ?? false)
       : props.aiProvider === "antigravity-cli"
         ? !!props.antigravityCliPath || props.aiTestMessage.includes("Antigravity CLI 연결에 성공")
+      : props.aiProvider === "claude-cli"
+        ? props.aiTestMessage.includes("Claude CLI 연결에 성공")
       : props.aiProvider === "openai-oauth"
         ? (props.codexStatus?.authenticated ?? false)
       : props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom"
@@ -483,6 +526,8 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
       ? (props.geminiLoginStatus?.message ?? "상태 확인 중...")
       : props.aiProvider === "antigravity-cli"
         ? (props.aiTestMessage || "Antigravity CLI 경로를 감지하거나 설치해 주세요.")
+      : props.aiProvider === "claude-cli"
+        ? "연결 테스트를 눌러 Claude CLI 로그인 상태를 확인해 주세요."
       : props.aiProvider === "openai-oauth"
         ? (props.codexStatus?.message ?? "상태 확인 중...")
       : (props.codexStatus?.message ?? "상태 확인 중..."));
@@ -572,6 +617,31 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
                 <a href={props.oauthLoginUrl} target="_blank" rel="noreferrer">여기를 클릭</a>해 주세요.
               </p>
             )}
+          </div>
+        )}
+
+        {/* 연결 설정 — Claude (Anthropic 구독) */}
+        {isClaudeCli && (
+          <div className="settingSection">
+            <p className="settingSectionLabel">로그인</p>
+            <CliInstallBox
+              cliName="claude"
+              onInstalled={props.onTest}
+              onDetected={props.setClaudeCliPath}
+            />
+            <CliPathBox
+              cliName="claude"
+              path={props.claudeCliPath}
+              setPath={props.setClaudeCliPath}
+              onDetected={props.onTest}
+            />
+            <p className="settingsHint">
+              터미널에서 <code className="cliCode">claude</code>를 실행해 Anthropic 계정으로 로그인하면
+              Pro/Max 구독이 그대로 사용됩니다.
+            </p>
+            <div className="connectionRow">
+              <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
+            </div>
           </div>
         )}
 

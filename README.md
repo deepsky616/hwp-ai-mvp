@@ -53,7 +53,15 @@ npm run desktop:win
 
 ## AI 수정 설정
 
-AI 수정 버튼을 사용하려면 환경 변수를 설정합니다.
+앱 안의 AI 설정에서 제공자를 선택할 수 있습니다. API 키 없이 개인 구독 로그인으로 쓰는 방법이 가장 간단합니다.
+
+### 개인 구독(OAuth)으로 사용
+
+- **Claude (Anthropic 구독)**: `npm install -g @anthropic-ai/claude-code`로 Claude CLI를 설치하고, 터미널에서 `claude`를 실행해 Anthropic 계정으로 로그인합니다. Pro/Max 구독이 그대로 사용됩니다.
+- **OpenAI 계정 (ChatGPT 구독)**: 앱의 'OpenAI 계정' 제공자에서 로그인 버튼을 누르면 Codex CLI OAuth 로그인이 진행됩니다.
+- **Google 구독**: Gemini CLI 또는 Antigravity CLI 제공자를 선택해 Google 계정으로 로그인합니다.
+
+### API 키로 사용
 
 ```bash
 export OPENAI_API_KEY="키를 넣어 주세요"

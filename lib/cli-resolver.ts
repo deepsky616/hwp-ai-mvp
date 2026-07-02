@@ -11,7 +11,7 @@ function osModule(): typeof import("node:os") {
   return nodeRequire("node:os") as typeof import("node:os");
 }
 
-export type CliName = "codex" | "gemini" | "antigravity";
+export type CliName = "codex" | "gemini" | "antigravity" | "claude";
 
 export type ResolvedCli = {
   command: string;
@@ -89,6 +89,7 @@ function candidatePaths(name: CliName, platform = process.platform): string[] {
       join(home, ".local", "bin", "agy.cmd"),
       join(home, ".bun", "bin", `${command}.exe`),
       join(home, ".volta", "bin", `${command}.exe`),
+      ...(name === "claude" ? [join(home, ".claude", "local", "claude.exe")] : []),
       ...nvmBins,
     ];
   }
@@ -101,6 +102,7 @@ function candidatePaths(name: CliName, platform = process.platform): string[] {
     join(home, ".local", "bin", command),
     join(home, ".bun", "bin", command),
     join(home, ".volta", "bin", command),
+    ...(name === "claude" ? [join(home, ".claude", "local", "claude")] : []),
     ...nvmBins,
   ];
 }

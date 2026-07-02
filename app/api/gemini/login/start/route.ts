@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { startGeminiLogin } from "../../../../../lib/gemini-auth";
+import { isTrustedLocalRequest, UNTRUSTED_REQUEST_MESSAGE } from "../../../../../lib/request-guard";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  if (!isTrustedLocalRequest(request.headers)) {
+    return NextResponse.json({ error: UNTRUSTED_REQUEST_MESSAGE }, { status: 403 });
+  }
   try {
     const result = await startGeminiLogin();
     return NextResponse.json(result);

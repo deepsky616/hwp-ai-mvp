@@ -1,9 +1,10 @@
-export type CliInstallName = "codex" | "gemini" | "antigravity";
+export type CliInstallName = "codex" | "gemini" | "antigravity" | "claude";
 
 export const CLI_INSTALL_PACKAGES: Record<CliInstallName, string> = {
   codex: "@openai/codex",
   gemini: "@google/gemini-cli",
   antigravity: "antigravity",
+  claude: "@anthropic-ai/claude-code",
 };
 
 const SCRIPT_INSTALL_URLS: Record<"codex" | "antigravity", { sh: string; ps1: string }> = {
