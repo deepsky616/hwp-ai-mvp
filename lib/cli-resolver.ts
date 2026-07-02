@@ -190,20 +190,31 @@ function mergePath(pathValue: string | undefined, entries: string[]): string {
   return merged.join(delimiter);
 }
 
+// npm 전역 설치는 Windows에서 .cmd 셔임(shim)을 만드는데, Node 18.20/20.12+는
+// 보안 패치(CVE-2024-27980)로 shell 없는 execFile의 .cmd/.bat 실행을 거부한다.
+// 알려진 npm CLI는 셔임 대신 패키지의 JS 엔트리를 node로 직접 실행한다.
+const NPM_CLI_ENTRY_JS: Partial<Record<CliName, string[]>> = {
+  codex: [join("node_modules", "@openai", "codex", "bin", "codex.js")],
+  gemini: [join("node_modules", "@google", "gemini-cli", "dist", "index.js")],
+  claude: [join("node_modules", "@anthropic-ai", "claude-code", "cli.js")],
+};
+
 export function resolveCli(name: CliName, customPath?: string, pathValue = process.env.PATH || ""): ResolvedCli {
   const cliPath = findCliPath(name, customPath, pathValue);
   if (!cliPath) {
     throw new Error(`${commandName(name)} CLI를 찾을 수 없습니다. CLI를 설치하거나 설정에서 실행 파일 경로를 직접 지정해 주세요.`);
   }
 
-  if (process.platform === "win32" && name === "codex" && /codex\.cmd$/i.test(cliPath)) {
-    const codexJs = join(dirname(cliPath), "node_modules", "@openai", "codex", "bin", "codex.js");
-    if (isFile(codexJs)) {
-      return {
-        command: "node",
-        argsPrefix: [codexJs],
-        envPath: mergePath(pathValue, [dirname(cliPath)]),
-      };
+  if (process.platform === "win32" && /\.(cmd|bat|ps1)$/i.test(cliPath)) {
+    for (const relative of NPM_CLI_ENTRY_JS[name] ?? []) {
+      const entryJs = join(dirname(cliPath), relative);
+      if (isFile(entryJs)) {
+        return {
+          command: "node",
+          argsPrefix: [entryJs],
+          envPath: mergePath(pathValue, [dirname(cliPath)]),
+        };
+      }
     }
   }
 

@@ -296,7 +296,7 @@ describe("인공지능 문서 수정", () => {
     expect(patches).toHaveLength(1);
     expect(execFileMock).toHaveBeenCalledWith(
       claudePath,
-      expect.arrayContaining(["-p", "--output-format", "json", "--model", "sonnet"]),
+      expect.arrayContaining(["-p", "--output-format", "json", "--model", "sonnet", "--tools"]),
       expect.any(Object),
       expect.any(Function),
     );

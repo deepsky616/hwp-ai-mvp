@@ -391,15 +391,27 @@ export function extractClaudeCliResultText(stdout: string): string {
   return stdout;
 }
 
+// 문서 패치 생성은 순수 텍스트 작업이므로 파일 접근·명령 실행 도구를 전부 끈다.
+// --tools를 모르는 구버전 CLI에서는 플래그 없이 재시도한다.
+async function execClaudeCli(args: string[], customPath: string | undefined, stdinInput?: string): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await execCliAsync("claude", [...args, "--tools", ""], undefined, customPath, stdinInput);
+  } catch (error) {
+    const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+    if (!message.includes("unknown option") && !message.includes("unknown argument")) throw error;
+    return execCliAsync("claude", args, undefined, customPath, stdinInput);
+  }
+}
+
 async function requestPatchesWithClaudeCli(request: AiEditRequest): Promise<DocumentPatch[]> {
   const customPath = request.aiSettings?.claudeCliPath;
-  const { stdout, stderr } = await execCliAsync("claude", [
+  const { stdout, stderr } = await execClaudeCli([
     "-p",
     "--output-format",
     "json",
     "--model",
     resolveRequestModel(request, DEFAULT_CLAUDE_MODEL),
-  ], undefined, customPath, buildPlainPrompt(request));
+  ], customPath, buildPlainPrompt(request));
   if (!stdout.trim()) {
     const authHint = describeAuthFailure(stderr);
     throw new Error(authHint ?? "Claude CLI가 응답을 반환하지 않았습니다. 터미널에서 'claude'를 실행해 로그인 상태를 확인해 주세요.");
@@ -456,14 +468,14 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
 
   if (provider === "claude-cli") {
     try {
-      const { stdout } = await execCliAsync("claude", [
+      const { stdout } = await execClaudeCli([
         "-p",
         "로그인과 실행 상태 확인입니다. OK만 출력하세요.",
         "--output-format",
         "text",
         "--model",
         DEFAULT_CLAUDE_MODEL,
-      ], undefined, settings.claudeCliPath);
+      ], settings.claudeCliPath);
       if (!stdout.trim()) {
         return { ok: false, message: "Claude CLI가 응답하지 않습니다. 터미널에서 'claude'를 실행해 Anthropic 계정으로 로그인해 주세요." };
       }
