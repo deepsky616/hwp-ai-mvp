@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requestDocumentPatches, type AiSettings } from "../../../../lib/ai-edit";
 import type { DocumentBlock } from "../../../../lib/document";
 import { createRateLimiter } from "../../../../lib/rate-limit";
+import { isTrustedLocalRequest, UNTRUSTED_REQUEST_MESSAGE } from "../../../../lib/request-guard";
 
 type RequestBody = {
   instruction?: string;
@@ -13,6 +14,10 @@ type RequestBody = {
 const limiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 
 export async function POST(request: NextRequest) {
+  if (!isTrustedLocalRequest(request.headers)) {
+    return NextResponse.json({ error: UNTRUSTED_REQUEST_MESSAGE }, { status: 403 });
+  }
+
   // 로컬 단일 사용자 앱이므로 고정 키를 쓴다. 클라이언트가 보내는
   // x-forwarded-for를 키로 쓰면 헤더 위조로 제한을 우회하고 Map이 폭증한다.
   const rl = limiter("local");

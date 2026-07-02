@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exceedsRecoverContentLength, isRecoverFileSizeAllowed, markdownToImportHtml } from "../../../../lib/hwp-load";
 import { createRateLimiter } from "../../../../lib/rate-limit";
+import { isTrustedLocalRequest, UNTRUSTED_REQUEST_MESSAGE } from "../../../../lib/request-guard";
 
 export const runtime = "nodejs";
 
@@ -41,6 +42,10 @@ async function loadKordoc() {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isTrustedLocalRequest(request.headers)) {
+    return NextResponse.json({ error: UNTRUSTED_REQUEST_MESSAGE }, { status: 403 });
+  }
+
   const rl = limiter("local");
   if (!rl.allowed) {
     return NextResponse.json(

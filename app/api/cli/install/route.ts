@@ -9,6 +9,7 @@ import {
   type CliInstallName,
 } from "../../../../lib/cli-install-info";
 import { createRateLimiter } from "../../../../lib/rate-limit";
+import { isTrustedLocalRequest, UNTRUSTED_REQUEST_MESSAGE } from "../../../../lib/request-guard";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +45,9 @@ function buildNpmInstallCommand(pkg: string): InstallCommand {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isTrustedLocalRequest(request.headers)) {
+    return NextResponse.json({ ok: false, error: UNTRUSTED_REQUEST_MESSAGE }, { status: 403 });
+  }
   const rl = limiter("local");
   if (!rl.allowed) {
     return NextResponse.json(
