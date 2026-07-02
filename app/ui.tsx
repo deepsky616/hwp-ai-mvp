@@ -97,6 +97,8 @@ export default function HwpAiMvp() {
           setGeminiCliPath={settings.setGeminiCliPath}
           antigravityCliPath={settings.antigravityCliPath}
           setAntigravityCliPath={settings.setAntigravityCliPath}
+          claudeCliPath={settings.claudeCliPath}
+          setClaudeCliPath={settings.setClaudeCliPath}
           geminiLoginStatus={settings.geminiLoginStatus}
           isGeminiPolling={settings.isGeminiPolling}
           onTest={settings.testAiSettings}

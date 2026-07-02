@@ -1,4 +1,4 @@
-import { getOpenAiAuthorizationAsync, migrateCodexAuthIfNeeded } from "./codex-auth";
+import { migrateCodexAuthIfNeeded } from "./codex-auth";
 import { validatePatches } from "./document";
 import type { DocumentBlock, DocumentPatch } from "./document";
 import * as childProcess from "node:child_process";
@@ -9,6 +9,7 @@ import { join } from "node:path";
 export type AiProvider =
   | "openai"
   | "codex-cli"
+  | "claude-cli"
   | "gemini"
   | "gemini-cli"
   | "antigravity-cli"
@@ -16,7 +17,7 @@ export type AiProvider =
   | "ollama"
   | "mlx"
   | "custom";
-type CliName = "codex" | "gemini" | "antigravity";
+type CliName = "codex" | "gemini" | "antigravity" | "claude";
 
 export type AiSettings = {
   provider?: AiProvider;
@@ -26,6 +27,7 @@ export type AiSettings = {
   codexCliPath?: string;
   geminiCliPath?: string;
   antigravityCliPath?: string;
+  claudeCliPath?: string;
 };
 
 export type AiEditRequest = {
@@ -58,10 +60,10 @@ function parseJsonFromText(text: string): { patches?: DocumentPatch[] } {
   }
 }
 
-function sanitizeModel(model?: string): string {
+function sanitizeModel(model?: string, fallback = process.env.OPENAI_MODEL || "gpt-4.1-mini"): string {
   const trimmed = model?.trim();
-  if (!trimmed) return process.env.OPENAI_MODEL || "gpt-4.1-mini";
-  if (!/^[a-zA-Z0-9._:\/-]+$/.test(trimmed)) return "gpt-4.1-mini";
+  if (!trimmed) return fallback;
+  if (!/^[a-zA-Z0-9._:\/-]+$/.test(trimmed)) return fallback;
   return trimmed;
 }
 
@@ -91,8 +93,8 @@ export function sanitizeBaseUrl(baseUrl: string | undefined, fallback: string): 
   }
 }
 
-function resolveRequestModel(request: AiEditRequest): string {
-  return sanitizeModel(request.aiSettings?.model || request.model);
+function resolveRequestModel(request: AiEditRequest, fallback?: string): string {
+  return sanitizeModel(request.aiSettings?.model || request.model, fallback);
 }
 
 function buildPlainPrompt(request: AiEditRequest): string {
@@ -121,6 +123,8 @@ function describeAuthFailure(text: string): string | null {
     lower.includes("token_invalidated") ||
     lower.includes("refresh_token") ||
     lower.includes("sign in again") ||
+    lower.includes("invalid api key") ||
+    lower.includes("please run /login") ||
     lower.includes("could not be refreshed")
   ) {
     return "로그인 인증이 만료되었거나 무효화되었습니다. 설정에서 해당 CLI 로그인 버튼을 다시 눌러 주세요.";
@@ -370,6 +374,39 @@ async function requestPatchesWithGeminiCli(request: AiEditRequest): Promise<Docu
   return parseJsonFromText(stdout).patches ?? [];
 }
 
+const DEFAULT_CLAUDE_MODEL = "sonnet";
+
+// Claude Code CLI의 --output-format json은 {"type":"result","result":"..."} 형태의
+// 봉투(envelope)로 응답을 감싼다. 봉투가 아니면 원문을 그대로 돌려준다.
+export function extractClaudeCliResultText(stdout: string): string {
+  try {
+    const envelope = JSON.parse(stdout.trim()) as { result?: unknown; is_error?: unknown };
+    if (typeof envelope?.result === "string") {
+      if (envelope.is_error === true) throw new Error(`Claude CLI 오류: ${envelope.result}`);
+      return envelope.result;
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Claude CLI 오류")) throw error;
+  }
+  return stdout;
+}
+
+async function requestPatchesWithClaudeCli(request: AiEditRequest): Promise<DocumentPatch[]> {
+  const customPath = request.aiSettings?.claudeCliPath;
+  const { stdout, stderr } = await execCliAsync("claude", [
+    "-p",
+    "--output-format",
+    "json",
+    "--model",
+    resolveRequestModel(request, DEFAULT_CLAUDE_MODEL),
+  ], undefined, customPath, buildPlainPrompt(request));
+  if (!stdout.trim()) {
+    const authHint = describeAuthFailure(stderr);
+    throw new Error(authHint ?? "Claude CLI가 응답을 반환하지 않았습니다. 터미널에서 'claude'를 실행해 로그인 상태를 확인해 주세요.");
+  }
+  return parseJsonFromText(extractClaudeCliResultText(stdout)).patches ?? [];
+}
+
 async function execAntigravityPrompt(prompt: string, customPath?: string): Promise<{ stdout: string; stderr: string }> {
   try {
     return await execCliAsync("antigravity", ["--prompt", prompt], undefined, customPath);
@@ -415,6 +452,30 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
   if (provider === "gemini-cli") {
     await execCliAsync("gemini", ["--version"], undefined, settings.geminiCliPath);
     return { ok: true, message: "Gemini CLI를 사용할 수 있습니다. 터미널에서 Gemini CLI 로그인이 완료되어 있어야 합니다." };
+  }
+
+  if (provider === "claude-cli") {
+    try {
+      const { stdout } = await execCliAsync("claude", [
+        "-p",
+        "로그인과 실행 상태 확인입니다. OK만 출력하세요.",
+        "--output-format",
+        "text",
+        "--model",
+        DEFAULT_CLAUDE_MODEL,
+      ], undefined, settings.claudeCliPath);
+      if (!stdout.trim()) {
+        return { ok: false, message: "Claude CLI가 응답하지 않습니다. 터미널에서 'claude'를 실행해 Anthropic 계정으로 로그인해 주세요." };
+      }
+      return { ok: true, message: "Claude CLI 연결에 성공했습니다. Anthropic 구독으로 AI 수정을 사용할 수 있습니다." };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      // execFileAsync가 인증 오류를 이미 한국어 힌트로 바꿔 던지므로 둘 다 확인한다.
+      if (describeAuthFailure(detail) || detail.includes("로그인 인증이 만료")) {
+        return { ok: false, message: "Claude 로그인이 필요합니다. 터미널에서 'claude'를 실행한 뒤 /login 명령으로 Anthropic 계정에 로그인해 주세요." };
+      }
+      throw error;
+    }
   }
 
   if (provider === "antigravity-cli") {
@@ -468,6 +529,7 @@ async function resolveRawPatches(request: AiEditRequest): Promise<DocumentPatch[
   const provider = request.aiSettings?.provider || "openai";
 
   if (provider === "codex-cli" || provider === "openai-oauth") return requestPatchesWithCodexCli(request);
+  if (provider === "claude-cli") return requestPatchesWithClaudeCli(request);
   if (provider === "gemini") return requestPatchesWithGeminiApi(request);
   if (provider === "gemini-cli") return requestPatchesWithGeminiCli(request);
   if (provider === "antigravity-cli") return requestPatchesWithAntigravityCli(request);
@@ -484,9 +546,17 @@ async function resolveRawPatches(request: AiEditRequest): Promise<DocumentPatch[
     );
   }
 
-  const authorization = getClientOpenAiAuthorization(request.aiSettings) || (await getOpenAiAuthorizationAsync());
+  // ChatGPT 구독 OAuth 토큰(~/.codex/auth.json)은 플랫폼 API(api.openai.com)에서
+  // 거부되므로 이 직접 호출 경로는 API 키만 사용한다. 구독 인증은 openai-oauth
+  // 제공자(Codex CLI 경유)로만 처리한다.
+  const envKey = process.env.OPENAI_API_KEY?.trim();
+  const authorization =
+    getClientOpenAiAuthorization(request.aiSettings) ||
+    (envKey ? { header: `Bearer ${envKey}`, source: "api-key" as const } : null);
   if (!authorization) {
-    throw new Error("인공지능 설정에서 API 키를 입력하거나 서버 환경 변수를 설정해 주세요.");
+    throw new Error(
+      "OpenAI API 키가 없습니다. 설정에서 API 키를 입력하거나, ChatGPT 구독을 사용하려면 'OpenAI 계정' 제공자를 선택해 주세요.",
+    );
   }
 
   const response = await fetch("https://api.openai.com/v1/responses", {

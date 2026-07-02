@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 export type AiProvider =
   | "openai"
   | "codex-cli"
+  | "claude-cli"
   | "gemini"
   | "gemini-cli"
   | "antigravity-cli"
@@ -14,9 +15,13 @@ export type AiProvider =
 
 const OPENAI_MODELS = ["gpt-5.4-mini", "gpt-5.3-instant", "gpt-5.4-thinking", "gpt-5.4-pro"];
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash", "gemini-3-pro"];
+// Claude CLI는 sonnet/opus/haiku 별칭을 지원한다. 별칭은 CLI 버전에 관계없이
+// 항상 최신 모델로 연결되므로 전체 모델 ID보다 안전하다.
+const CLAUDE_MODELS = ["sonnet", "opus", "haiku"];
 
 function modelsForProvider(provider: AiProvider): string[] {
   if (provider === "antigravity-cli") return [];
+  if (provider === "claude-cli") return CLAUDE_MODELS;
   if (provider === "gemini" || provider === "gemini-cli") return GEMINI_MODELS;
   if (provider === "openai" || provider === "codex-cli" || provider === "openai-oauth") return OPENAI_MODELS;
   return [];
@@ -30,6 +35,7 @@ export type AiSettings = {
   codexCliPath?: string;
   geminiCliPath?: string;
   antigravityCliPath?: string;
+  claudeCliPath?: string;
 };
 
 export type CodexStatus = {
@@ -62,6 +68,7 @@ export function useAiSettings() {
   const [codexCliPath, setCodexCliPath] = useState("");
   const [geminiCliPath, setGeminiCliPath] = useState("");
   const [antigravityCliPath, setAntigravityCliPath] = useState("");
+  const [claudeCliPath, setClaudeCliPath] = useState("");
   const [models, setModels] = useState<string[]>(OPENAI_MODELS);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [aiTestMessage, setAiTestMessage] = useState("");
@@ -84,8 +91,9 @@ export function useAiSettings() {
       codexCliPath: codexCliPath.trim() || undefined,
       geminiCliPath: geminiCliPath.trim() || undefined,
       antigravityCliPath: antigravityCliPath.trim() || undefined,
+      claudeCliPath: claudeCliPath.trim() || undefined,
     }),
-    [aiProvider, aiApiKey, aiBaseUrl, selectedModel, codexCliPath, geminiCliPath, antigravityCliPath],
+    [aiProvider, aiApiKey, aiBaseUrl, selectedModel, codexCliPath, geminiCliPath, antigravityCliPath, claudeCliPath],
   );
 
   const refreshCodexSettings = useCallback(async () => {
@@ -122,9 +130,10 @@ export function useAiSettings() {
     const savedCodexPath = window.localStorage.getItem("hwp-ai-codex-cli-path");
     const savedGeminiPath = window.localStorage.getItem("hwp-ai-gemini-cli-path");
     const savedAntigravityPath = window.localStorage.getItem("hwp-ai-antigravity-cli-path");
+    const savedClaudePath = window.localStorage.getItem("hwp-ai-claude-cli-path");
     if (
       savedProvider &&
-      ["openai", "codex-cli", "gemini", "gemini-cli", "antigravity-cli", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
+      ["openai", "codex-cli", "claude-cli", "gemini", "gemini-cli", "antigravity-cli", "openai-oauth", "ollama", "mlx", "custom"].includes(savedProvider)
     )
       setAiProvider(savedProvider === "codex-cli" ? "openai-oauth" : savedProvider);
     if (savedKey) setAiApiKey(savedKey);
@@ -132,6 +141,7 @@ export function useAiSettings() {
     if (savedCodexPath) setCodexCliPath(savedCodexPath);
     if (savedGeminiPath) setGeminiCliPath(savedGeminiPath);
     if (savedAntigravityPath) setAntigravityCliPath(savedAntigravityPath);
+    if (savedClaudePath) setClaudeCliPath(savedClaudePath);
   }, [refreshCodexSettings, refreshGeminiStatus]);
 
   useEffect(() => {
@@ -174,7 +184,9 @@ export function useAiSettings() {
     else window.localStorage.removeItem("hwp-ai-gemini-cli-path");
     if (antigravityCliPath.trim()) window.localStorage.setItem("hwp-ai-antigravity-cli-path", antigravityCliPath.trim());
     else window.localStorage.removeItem("hwp-ai-antigravity-cli-path");
-  }, [selectedModel, aiProvider, aiApiKey, aiBaseUrl, codexCliPath, geminiCliPath, antigravityCliPath]);
+    if (claudeCliPath.trim()) window.localStorage.setItem("hwp-ai-claude-cli-path", claudeCliPath.trim());
+    else window.localStorage.removeItem("hwp-ai-claude-cli-path");
+  }, [selectedModel, aiProvider, aiApiKey, aiBaseUrl, codexCliPath, geminiCliPath, antigravityCliPath, claudeCliPath]);
 
   useEffect(() => {
     if (!isPolling) return;
@@ -351,6 +363,8 @@ export function useAiSettings() {
     setGeminiCliPath,
     antigravityCliPath,
     setAntigravityCliPath,
+    claudeCliPath,
+    setClaudeCliPath,
     geminiLoginStatus,
     isGeminiPolling,
     refreshCodexSettings,

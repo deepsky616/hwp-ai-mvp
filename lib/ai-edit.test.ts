@@ -273,6 +273,65 @@ describe("인공지능 문서 수정", () => {
     );
   });
 
+  it("Claude CLI로 문서 패치를 요청합니다 (JSON 봉투 응답)", async () => {
+    const claudePath = tempCli("claude");
+    const envelope = JSON.stringify({
+      type: "result",
+      is_error: false,
+      result: JSON.stringify({ patches: [{ type: "paragraph", sectionIndex: 0, paragraphIndex: 0, text: "안녕하십니까" }] }),
+    });
+    const execFileMock = vi.fn((command, args, options, callback) => {
+      const realCallback = (typeof options === "function" ? options : callback) as Function;
+      realCallback(null, envelope, "");
+      return { stdin: { end: vi.fn() } } as unknown as childProcess.ChildProcess;
+    }) as unknown as typeof childProcess.execFile;
+    setExecFileForTest(execFileMock);
+
+    const patches = await requestDocumentPatches({
+      instruction: "띄어쓰기 수정",
+      blocks,
+      aiSettings: { provider: "claude-cli", model: "sonnet" },
+    });
+
+    expect(patches).toHaveLength(1);
+    expect(execFileMock).toHaveBeenCalledWith(
+      claudePath,
+      expect.arrayContaining(["-p", "--output-format", "json", "--model", "sonnet"]),
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("Claude CLI 연결 테스트는 짧은 프롬프트 실행으로 확인합니다", async () => {
+    const claudePath = tempCli("claude");
+    const execFileMock = vi.fn((command, args, options, callback) => {
+      const realCallback = (typeof options === "function" ? options : callback) as Function;
+      realCallback(null, "OK", "");
+      return { stdin: { end: vi.fn() } } as unknown as childProcess.ChildProcess;
+    }) as unknown as typeof childProcess.execFile;
+    setExecFileForTest(execFileMock);
+
+    await expect(testAiConnection({ provider: "claude-cli" })).resolves.toMatchObject({ ok: true });
+    expect(execFileMock).toHaveBeenCalledWith(
+      claudePath,
+      expect.arrayContaining(["-p", "--output-format", "text"]),
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("Claude CLI 인증 오류는 터미널 로그인 안내로 바꿉니다", async () => {
+    tempCli("claude");
+    const execFileMock = vi.fn((command, args, options, callback) => {
+      const realCallback = (typeof options === "function" ? options : callback) as Function;
+      realCallback(new Error("Invalid API key · Please run /login"), "", "Invalid API key · Please run /login");
+      return { stdin: { end: vi.fn() } } as unknown as childProcess.ChildProcess;
+    }) as unknown as typeof childProcess.execFile;
+    setExecFileForTest(execFileMock);
+
+    await expect(testAiConnection({ provider: "claude-cli" })).resolves.toMatchObject({ ok: false });
+  });
+
   it("Antigravity CLI로 문서 패치를 요청합니다", async () => {
     const agyPath = tempCli("agy");
     const execFileMock = vi.fn((command, args, options, callback) => {

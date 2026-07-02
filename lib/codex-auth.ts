@@ -139,8 +139,10 @@ export function normalizeModelList(models: Array<{ id?: unknown }>): string[] {
 
 export async function listUsableModels(): Promise<string[]> {
   const OPENAI_API_MODELS = ["gpt-4.1-mini", "gpt-4.1", "o4-mini", "o3-mini"];
+  // ChatGPT 구독 OAuth 토큰은 플랫폼 API(api.openai.com)에서 거부되므로
+  // API 키 인증일 때만 원격 모델 목록을 조회하고, 그 외에는 기본 목록을 쓴다.
   const authorization = await getOpenAiAuthorizationAsync();
-  if (!authorization) return OPENAI_API_MODELS;
+  if (!authorization || authorization.source !== "api-key") return OPENAI_API_MODELS;
 
   const response = await fetch("https://api.openai.com/v1/models", {
     headers: { Authorization: authorization.header },
