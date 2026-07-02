@@ -15,5 +15,14 @@ describe("useHwpEditor", () => {
     act(() => result.current.clearPatches());
     expect(result.current.pendingPatches).toEqual([]);
     expect(result.current.previewCards).toEqual([]);
+    expect(result.current.excludedPatchIds).toEqual([]);
+  });
+
+  it("togglePatchExclusion으로 카드 제외를 켜고 끌 수 있다", () => {
+    const { result } = renderHook(() => useHwpEditor());
+    act(() => result.current.togglePatchExclusion("patch-0-paragraph:0:0"));
+    expect(result.current.excludedPatchIds).toEqual(["patch-0-paragraph:0:0"]);
+    act(() => result.current.togglePatchExclusion("patch-0-paragraph:0:0"));
+    expect(result.current.excludedPatchIds).toEqual([]);
   });
 });

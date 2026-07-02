@@ -65,6 +65,8 @@ export default function HwpAiMvp() {
             instruction={instruction}
             paragraphCount={paragraphCount}
             tableCellCount={tableCellCount}
+            excludedPatchIds={editor.excludedPatchIds}
+            onTogglePatch={editor.togglePatchExclusion}
             onInstructionChange={setInstruction}
             onSuggest={() => editor.createAiSuggestion(instruction, settings.effectiveAiSettings)}
             onStop={editor.stopProcessing}

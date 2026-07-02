@@ -35,6 +35,8 @@ export function useHwpEditor() {
   const [isBusy, setIsBusy] = useState(false);
   const [pendingPatches, setPendingPatches] = useState<DocumentPatch[]>([]);
   const [previewCards, setPreviewCards] = useState<PatchPreviewCard[]>([]);
+  // 반영에서 제외할 미리보기 카드 id 목록 — 새 제안이 만들어지면 초기화된다.
+  const [excludedPatchIds, setExcludedPatchIds] = useState<string[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     createChatMessage("assistant", "HWP 문서를 열고 원하는 수정 방향을 입력해 주세요.", "chat-welcome"),
   ]);
@@ -160,6 +162,7 @@ export function useHwpEditor() {
       }
       setPendingPatches(allPatches);
       setPreviewCards(buildPatchPreviewCards(currentBlocks, allPatches));
+      setExcludedPatchIds([]);
       if (stoppedAtChunk >= 0) {
         const stopMsg = `${stoppedAtChunk}/${totalChunks} 구간까지 처리 후 중단됨 · ${allPatches.length}개 수정 보관`;
         setStatus(stopMsg);
@@ -173,6 +176,7 @@ export function useHwpEditor() {
       if (isAbortError(error) || controller.signal.aborted) {
         setPendingPatches(allPatches);
         setPreviewCards(buildPatchPreviewCards(currentBlocks, allPatches));
+        setExcludedPatchIds([]);
         const stopMsg = `처리를 중단했습니다 · ${allPatches.length}개 수정 보관`;
         setStatus(stopMsg);
         setChatMessages((m) => replaceChatMessageText(m, progressId, stopMsg));
@@ -192,16 +196,26 @@ export function useHwpEditor() {
   }, []);
 
   const applyPendingAiEdit = useCallback(async () => {
-    if (pendingPatches.length === 0) { setStatus("반영할 수정 제안이 없습니다."); return; }
+    // 미리보기 카드는 pendingPatches와 같은 순서로 만들어지므로 인덱스로 대응된다.
+    const selectedPatches = pendingPatches.filter((_, index) => {
+      const cardId = previewCards[index]?.id;
+      return !cardId || !excludedPatchIds.includes(cardId);
+    });
+    if (selectedPatches.length === 0) { setStatus("반영할 수정 제안이 없습니다. 카드에서 반영할 항목을 선택해 주세요."); return; }
     setIsBusy(true);
     try {
-      await requestRhwp("applyTextPatches", { patches: pendingPatches });
+      await requestRhwp("applyTextPatches", { patches: selectedPatches });
       const refreshed = await requestRhwp<DocumentBlock[]>("extractTextBlocks");
       setBlocks(refreshed);
-      setStatus(`수정 제안 ${pendingPatches.length}개를 문서에 반영했습니다.`);
-      setChatMessages((m) => [...m, createChatMessage("system", `수정 제안 ${pendingPatches.length}개를 반영했습니다.`)]);
+      const skipped = pendingPatches.length - selectedPatches.length;
+      const summary = skipped > 0
+        ? `수정 제안 ${selectedPatches.length}개를 반영했습니다 (${skipped}개 제외).`
+        : `수정 제안 ${selectedPatches.length}개를 문서에 반영했습니다.`;
+      setStatus(summary);
+      setChatMessages((m) => [...m, createChatMessage("system", summary)]);
       setPendingPatches([]);
       setPreviewCards([]);
+      setExcludedPatchIds([]);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       setStatus(msg);
@@ -209,9 +223,13 @@ export function useHwpEditor() {
     } finally {
       setIsBusy(false);
     }
-  }, [pendingPatches, requestRhwp]);
+  }, [pendingPatches, previewCards, excludedPatchIds, requestRhwp]);
 
-  const clearPatches = useCallback(() => { setPendingPatches([]); setPreviewCards([]); }, []);
+  const clearPatches = useCallback(() => { setPendingPatches([]); setPreviewCards([]); setExcludedPatchIds([]); }, []);
+
+  const togglePatchExclusion = useCallback((cardId: string) => {
+    setExcludedPatchIds((prev) => (prev.includes(cardId) ? prev.filter((id) => id !== cardId) : [...prev, cardId]));
+  }, []);
 
   function downloadBytes(name: string, bytes: Uint8Array, mime: string) {
     const blob = new Blob([bytes.buffer as ArrayBuffer], { type: mime });
@@ -266,6 +284,7 @@ export function useHwpEditor() {
   return {
     frameRef, fileName, status, blocks, isBusy,
     pendingPatches, previewCards, chatMessages,
+    excludedPatchIds, togglePatchExclusion,
     loadFile, extractBlocks, createAiSuggestion, stopProcessing,
     applyPendingAiEdit, clearPatches,
     exportHwp, exportHwpx, exportMarkdown, exportHtml,

@@ -10,6 +10,8 @@ type ChatPanelProps = {
   instruction: string;
   paragraphCount: number;
   tableCellCount: number;
+  excludedPatchIds: string[];
+  onTogglePatch: (cardId: string) => void;
   onInstructionChange: (value: string) => void;
   onSuggest: () => void;
   onStop: () => void;
@@ -28,8 +30,10 @@ const QUICK_PROMPTS = [
 export function ChatPanel({
   isBusy, status, chatMessages, previewCards, pendingPatches,
   instruction, paragraphCount, tableCellCount,
+  excludedPatchIds, onTogglePatch,
   onInstructionChange, onSuggest, onStop, onApply, onClearPatches, onOpenSettings,
 }: ChatPanelProps) {
+  const selectedCount = previewCards.filter((card) => !excludedPatchIds.includes(card.id)).length;
   return (
     <aside className="card sideCard chatPanel">
       <div className="assistantHeader">
@@ -61,14 +65,24 @@ export function ChatPanel({
             <strong>수정 전후 비교</strong>
             <button className="secondaryButton" disabled={isBusy} onClick={onClearPatches}>제안 비우기</button>
           </div>
-          {previewCards.slice(0, 5).map((card) => (
-            <article className="proposalCard" key={card.id}>
-              <span>{card.label}</span>
-              <div><b>기존</b><p>{card.before || "빈 내용"}</p></div>
-              <div><b>수정</b><p>{card.after}</p></div>
-            </article>
-          ))}
-          {previewCards.length > 5 && <p className="moreNotice">나머지 {previewCards.length - 5}개 제안도 문서 반영에 포함됩니다.</p>}
+          {previewCards.map((card) => {
+            const checked = !excludedPatchIds.includes(card.id);
+            return (
+              <article className="proposalCard" key={card.id} style={checked ? undefined : { opacity: 0.55 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={isBusy}
+                    onChange={() => onTogglePatch(card.id)}
+                  />
+                  <span>{card.label}</span>
+                </label>
+                <div><b>기존</b><p>{card.before || "빈 내용"}</p></div>
+                <div><b>수정</b><p>{card.after}</p></div>
+              </article>
+            );
+          })}
         </div>
       )}
       <div className="quickPrompts">
@@ -84,7 +98,9 @@ export function ChatPanel({
           ) : (
             <button onClick={onSuggest}>보내기</button>
           )}
-          <button className="secondaryButton" disabled={isBusy || pendingPatches.length === 0} onClick={onApply}>문서에 반영</button>
+          <button className="secondaryButton" disabled={isBusy || pendingPatches.length === 0 || selectedCount === 0} onClick={onApply}>
+            {pendingPatches.length > 0 ? `문서에 반영 (${selectedCount}/${previewCards.length})` : "문서에 반영"}
+          </button>
         </div>
       </div>
       <p className="status">{isBusy ? "처리 중입니다..." : status}</p>
