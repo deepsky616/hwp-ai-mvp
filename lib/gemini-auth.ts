@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { findCliPath } from "./cli-resolver";
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -27,14 +28,30 @@ const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 
 function findGeminiBundleDir(): string | null {
   const home = osModule().homedir();
-  const candidates: string[] = [
+  const candidates: string[] = [];
+
+  // 설치된 gemini 실행 파일(심볼릭 링크)에서 실제 패키지 위치를 역추적한다.
+  // nvm, volta 등 후보 목록에 없는 설치 경로도 이 방법으로 잡힌다.
+  try {
+    const cliPath = findCliPath("gemini");
+    if (cliPath) {
+      const real = fsModule().realpathSync(cliPath);
+      // <pkg>/dist/index.js 또는 <pkg>/bundle/gemini.js 형태에서 패키지 루트를 찾는다.
+      const pkgRoot = real.replace(/([\\/])(dist|bundle)[\\/][^\\/]+$/, "");
+      if (pkgRoot !== real) candidates.push(join(pkgRoot, "bundle"));
+    }
+  } catch {
+    // 역추적 실패 시 아래 고정 후보로 폴백
+  }
+
+  candidates.push(
     join(home, ".npm-global", "lib", "node_modules", "@google", "gemini-cli", "bundle"),
     join(home, ".local", "lib", "node_modules", "@google", "gemini-cli", "bundle"),
     join(home, ".bun", "install", "global", "node_modules", "@google", "gemini-cli", "bundle"),
     "/opt/homebrew/lib/node_modules/@google/gemini-cli/bundle",
     "/usr/local/lib/node_modules/@google/gemini-cli/bundle",
     "/usr/lib/node_modules/@google/gemini-cli/bundle",
-  ];
+  );
   if (process.platform === "win32") {
     const appData = process.env.APPDATA ?? join(home, "AppData", "Roaming");
     const localAppData = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
@@ -157,6 +174,32 @@ async function exchangeCodeForTokens(
   const credDir = join(osModule().homedir(), GEMINI_DIR);
   fsModule().mkdirSync(credDir, { recursive: true });
   fsModule().writeFileSync(join(credDir, "oauth_creds.json"), JSON.stringify(tokens, null, 2), "utf-8");
+  ensureOauthPersonalAuthType(credDir);
+}
+
+// 자격증명만 있고 인증 방식이 설정되지 않으면 gemini CLI가 첫 실행 때
+// 대화형으로 인증 방식을 물어 헤드리스 호출이 멈춘다. settings.json에
+// oauth-personal을 (기존 설정을 보존하며) 기록해 둔다.
+function ensureOauthPersonalAuthType(credDir: string): void {
+  const settingsPath = join(credDir, "settings.json");
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(fsModule().readFileSync(settingsPath, "utf-8")) as Record<string, unknown>;
+  } catch {
+    // 파일이 없거나 손상 시 새로 만든다
+  }
+  const security = (settings.security ?? {}) as Record<string, unknown>;
+  const auth = (security.auth ?? {}) as Record<string, unknown>;
+  if (!auth.selectedType) auth.selectedType = "oauth-personal";
+  security.auth = auth;
+  settings.security = security;
+  // 구버전 CLI가 읽는 legacy 키도 함께 유지한다.
+  if (!settings.selectedAuthType) settings.selectedAuthType = "oauth-personal";
+  try {
+    fsModule().writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  } catch {
+    // 설정 기록 실패는 로그인 자체를 막지 않는다
+  }
 }
 
 export async function startGeminiLogin(): Promise<{ authUrl: string; sessionId: string }> {

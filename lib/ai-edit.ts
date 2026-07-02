@@ -118,6 +118,12 @@ const CLI_TIMEOUT_MS = 180_000;
 
 function describeAuthFailure(text: string): string | null {
   const lower = text.toLowerCase();
+  if (lower.includes("disabled in this account")) {
+    return "Google 계정에서 이 서비스가 비활성화되어 있습니다. Google에 이의신청(appeal)을 하거나 다른 계정으로 로그인해 주세요.";
+  }
+  if (lower.includes("please sign in")) {
+    return "CLI 로그인이 필요합니다. 터미널에서 해당 CLI를 실행해 로그인해 주세요.";
+  }
   if (
     lower.includes("401") ||
     lower.includes("unauthorized") ||
@@ -133,7 +139,15 @@ function describeAuthFailure(text: string): string | null {
   return null;
 }
 
-function execFileAsync(command: string, args: string[], cwd = process.cwd(), envPath?: string, stdinInput?: string): Promise<{ stdout: string; stderr: string }> {
+// CLI가 뱉는 수천 자 스택트레이스 대신 핵심 오류 한두 줄만 사용자에게 보여준다.
+export function summarizeCliError(text: string): string {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const meaningful = lines.find((line) => /error|failed|denied|disabled|invalid|exception/i.test(line)) ?? lines[0] ?? "";
+  const summary = meaningful.replace(/^\S*Error:?\s*/i, "").trim() || meaningful;
+  return summary.length > 300 ? `${summary.slice(0, 300)}...` : summary;
+}
+
+function execFileAsync(command: string, args: string[], cwd = process.cwd(), envPath?: string, stdinInput?: string, timeoutMs = CLI_TIMEOUT_MS): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = execFileImpl(
       command,
@@ -142,7 +156,7 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd(), env
         cwd,
         env: envPath ? { ...process.env, PATH: envPath } : process.env,
         maxBuffer: 1024 * 1024 * 20,
-        timeout: CLI_TIMEOUT_MS,
+        timeout: timeoutMs,
         killSignal: "SIGTERM",
       },
       (error, stdout, stderr) => {
@@ -150,7 +164,14 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd(), env
           const err = error as NodeJS.ErrnoException & { killed?: boolean };
           const stderrText = String(stderr ?? "");
           if (err.killed) {
-            reject(new Error(`${command} 응답 시간이 초과되었습니다 (${CLI_TIMEOUT_MS / 1000}초). 모델 응답이 너무 오래 걸리거나 로그인 인증에 문제가 있을 수 있습니다.`));
+            // 일부 CLI(agy 등)는 오류를 출력한 뒤 종료하지 않고 매달린다.
+            // 타임아웃으로 죽였더라도 출력에 담긴 원인(미로그인 등)을 우선 보여준다.
+            const timeoutAuthHint = describeAuthFailure(`${stderrText}\n${String(stdout ?? "")}`);
+            if (timeoutAuthHint) {
+              reject(new Error(timeoutAuthHint));
+              return;
+            }
+            reject(new Error(`${command} 응답 시간이 초과되었습니다 (${timeoutMs / 1000}초). 모델 응답이 너무 오래 걸리거나 로그인 인증에 문제가 있을 수 있습니다.`));
             return;
           }
           const authHint = describeAuthFailure(stderrText);
@@ -158,7 +179,7 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd(), env
             reject(new Error(authHint));
             return;
           }
-          reject(new Error(`${command} 실행에 실패했습니다: ${stderrText || error.message}`));
+          reject(new Error(`${command} 실행에 실패했습니다: ${summarizeCliError(stderrText) || error.message}`));
           return;
         }
         resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
@@ -170,10 +191,10 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd(), env
   });
 }
 
-async function execCliAsync(name: CliName, args: string[], cwd = process.cwd(), customPath?: string, stdinInput?: string): Promise<{ stdout: string; stderr: string }> {
+async function execCliAsync(name: CliName, args: string[], cwd = process.cwd(), customPath?: string, stdinInput?: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
   const { resolveCli } = await import("./cli-resolver");
   const resolved = resolveCli(name, customPath);
-  return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath, stdinInput);
+  return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath, stdinInput, timeoutMs);
 }
 
 function getClientOpenAiAuthorization(settings?: AiSettings) {
@@ -492,6 +513,23 @@ export async function testAiConnection(settings: AiSettings): Promise<{ ok: bool
   }
 
   if (provider === "antigravity-cli") {
+    // agy에는 헤드리스 로그인 명령이 없어 'models' 조회로 로그인 여부를 빠르게 판정한다.
+    const SIGN_IN_HINT = "Antigravity 로그인이 필요합니다. 터미널에서 'agy'를 실행해 Google 계정으로 로그인해 주세요.";
+    try {
+      // 상태 확인이므로 짧은 타임아웃을 쓴다 (agy models는 미로그인 시 매달릴 수 있다).
+      const { stdout, stderr } = await execCliAsync("antigravity", ["models"], undefined, settings.antigravityCliPath, undefined, 15_000);
+      const combined = `${stdout}\n${stderr}`;
+      if (/please sign in/i.test(combined)) return { ok: false, message: SIGN_IN_HINT };
+      if (stdout.trim()) return { ok: true, message: "Antigravity CLI 연결에 성공했습니다. Google 계정 로그인이 확인되었습니다." };
+    } catch (error) {
+      const detail = (error instanceof Error ? error.message : String(error)).toLowerCase();
+      // 미로그인 상태의 agy는 대화형 입력을 기다리며 매달리므로 타임아웃도 로그인 안내로 처리한다.
+      if (detail.includes("sign in") || detail.includes("로그인이 필요") || detail.includes("시간이 초과")) {
+        return { ok: false, message: SIGN_IN_HINT };
+      }
+      if (!detail.includes("unknown") && !detail.includes("invalid")) throw error;
+    }
+    // 구버전 agy에 models 서브커맨드가 없으면 짧은 프롬프트 실행으로 확인한다.
     const { stdout } = await execAntigravityPrompt("로그인과 실행 상태 확인입니다. OK만 출력하세요.", settings.antigravityCliPath);
     return {
       ok: true,
