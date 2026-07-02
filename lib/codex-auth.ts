@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_OPENAI_MODELS } from "./model-defaults";
 
 export type AuthSource = "codex-oauth" | "api-key" | "missing";
 
@@ -97,6 +99,54 @@ export function getCodexAuthStatus(): CodexAuthStatus {
   };
 }
 
+type LoginStatusExec = (command: string, args: string[], envPath: string) => Promise<string>;
+
+const defaultLoginStatusExec: LoginStatusExec = (command, args, envPath) =>
+  new Promise((resolve, reject) => {
+    execFile(
+      command,
+      args,
+      { env: { ...process.env, PATH: envPath }, timeout: 10_000 },
+      (error, stdout, stderr) => {
+        const text = `${stdout ?? ""}\n${stderr ?? ""}`;
+        // 미로그인 시 codex는 0이 아닌 코드로 끝나지만 출력에 상태가 담겨 있다.
+        if (error && !text.trim()) { reject(error); return; }
+        resolve(text);
+      },
+    );
+  });
+
+// 최신 codex CLI는 자격증명을 auth.json 파일이 아니라 OS 키링(keyring)에
+// 저장하므로, 파일이 없으면 CLI에 직접 로그인 상태를 물어 판정한다.
+export async function getCodexAuthStatusAsync(
+  customPath?: string,
+  execLoginStatus: LoginStatusExec = defaultLoginStatusExec,
+): Promise<CodexAuthStatus> {
+  const fileStatus = getCodexAuthStatus();
+  if (fileStatus.authenticated) return fileStatus;
+
+  try {
+    const { resolveCli } = await import("./cli-resolver");
+    const resolved = resolveCli("codex", customPath);
+    const output = await execLoginStatus(resolved.command, [...resolved.argsPrefix, "login", "status"], resolved.envPath);
+    const lower = output.toLowerCase();
+    if (lower.includes("logged in") && !lower.includes("not logged in")) {
+      const viaApiKey = lower.includes("api key");
+      return {
+        authenticated: true,
+        source: viaApiKey ? "api-key" : "codex-oauth",
+        authFile: fileStatus.authFile,
+        message: viaApiKey
+          ? "Codex CLI가 API 키로 로그인되어 있습니다."
+          : "OpenAI 계정 로그인이 연결되어 있습니다.",
+      };
+    }
+  } catch {
+    // CLI 미설치·실행 실패 시에는 파일 기반 결과를 그대로 쓴다.
+  }
+  return fileStatus;
+}
+
 export function getOpenAiAuthorization(): { header: string; source: Exclude<AuthSource, "missing"> } | null {
   const auth = readCodexAuthFile();
   const accessToken = auth?.tokens?.access_token?.trim();
@@ -138,18 +188,17 @@ export function normalizeModelList(models: Array<{ id?: unknown }>): string[] {
 }
 
 export async function listUsableModels(): Promise<string[]> {
-  const OPENAI_API_MODELS = ["gpt-4.1-mini", "gpt-4.1", "o4-mini", "o3-mini"];
   // ChatGPT 구독 OAuth 토큰은 플랫폼 API(api.openai.com)에서 거부되므로
   // API 키 인증일 때만 원격 모델 목록을 조회하고, 그 외에는 기본 목록을 쓴다.
   const authorization = await getOpenAiAuthorizationAsync();
-  if (!authorization || authorization.source !== "api-key") return OPENAI_API_MODELS;
+  if (!authorization || authorization.source !== "api-key") return DEFAULT_OPENAI_MODELS;
 
   const response = await fetch("https://api.openai.com/v1/models", {
     headers: { Authorization: authorization.header },
   });
 
-  if (!response.ok) return OPENAI_API_MODELS;
+  if (!response.ok) return DEFAULT_OPENAI_MODELS;
   const data = (await response.json()) as { data?: Array<{ id?: unknown }> };
   const normalized = normalizeModelList(data.data ?? []);
-  return normalized.length ? normalized : OPENAI_API_MODELS;
+  return normalized.length ? normalized : DEFAULT_OPENAI_MODELS;
 }

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getCodexAuthStatus,
+  getCodexAuthStatusAsync,
   getOpenAiAuthorization,
   listUsableModels,
   normalizeModelList,
@@ -67,6 +68,24 @@ describe("코덱스 인증", () => {
     expect(fetchMock).toHaveBeenCalledWith("https://api.openai.com/v1/models", expect.objectContaining({
       headers: expect.objectContaining({ Authorization: "Bearer sk-test" }),
     }));
+  });
+
+  it("auth.json이 없어도 CLI가 로그인 상태라면 인증으로 판정합니다 (키링 저장)", async () => {
+    process.env.CODEX_AUTH_FILE = join(tmpdir(), "missing-codex-auth.json");
+    delete process.env.OPENAI_API_KEY;
+    process.env.PATH = "";
+
+    const status = await getCodexAuthStatusAsync(undefined, async () => "Logged in using ChatGPT\n");
+    expect(status).toMatchObject({ authenticated: true, source: "codex-oauth" });
+  });
+
+  it("auth.json이 없고 CLI도 미로그인이면 미인증으로 판정합니다", async () => {
+    process.env.CODEX_AUTH_FILE = join(tmpdir(), "missing-codex-auth.json");
+    delete process.env.OPENAI_API_KEY;
+    process.env.PATH = "";
+
+    const status = await getCodexAuthStatusAsync(undefined, async () => "Not logged in\n");
+    expect(status).toMatchObject({ authenticated: false, source: "missing" });
   });
 
   it("auth_mode가 'ChatGpt'(대문자)이면 'chatgpt'로 자동 마이그레이션합니다", () => {

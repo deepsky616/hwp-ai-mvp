@@ -1,4 +1,5 @@
 import { migrateCodexAuthIfNeeded } from "./codex-auth";
+import { DEFAULT_OPENAI_MODEL } from "./model-defaults";
 import { validatePatches } from "./document";
 import type { DocumentBlock, DocumentPatch } from "./document";
 import * as childProcess from "node:child_process";
@@ -60,7 +61,7 @@ function parseJsonFromText(text: string): { patches?: DocumentPatch[] } {
   }
 }
 
-function sanitizeModel(model?: string, fallback = process.env.OPENAI_MODEL || "gpt-4.1-mini"): string {
+function sanitizeModel(model?: string, fallback = process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL): string {
   const trimmed = model?.trim();
   if (!trimmed) return fallback;
   if (!/^[a-zA-Z0-9._:\/-]+$/.test(trimmed)) return fallback;

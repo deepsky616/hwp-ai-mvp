@@ -13,11 +13,11 @@ export type AiProvider =
   | "mlx"
   | "custom";
 
-const OPENAI_MODELS = ["gpt-5.4-mini", "gpt-5.3-instant", "gpt-5.4-thinking", "gpt-5.4-pro"];
-const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash", "gemini-3-pro"];
-// Claude CLI는 sonnet/opus/haiku 별칭을 지원한다. 별칭은 CLI 버전에 관계없이
-// 항상 최신 모델로 연결되므로 전체 모델 ID보다 안전하다.
-const CLAUDE_MODELS = ["sonnet", "opus", "haiku"];
+import {
+  DEFAULT_CLAUDE_MODELS as CLAUDE_MODELS,
+  DEFAULT_GEMINI_MODELS as GEMINI_MODELS,
+  DEFAULT_OPENAI_MODELS as OPENAI_MODELS,
+} from "./model-defaults";
 
 function modelsForProvider(provider: AiProvider): string[] {
   if (provider === "antigravity-cli") return [];
@@ -98,7 +98,8 @@ export function useAiSettings() {
 
   const refreshCodexSettings = useCallback(async () => {
     try {
-      const statusRes = await fetch("/api/codex/status");
+      const query = codexCliPath.trim() ? `?cliPath=${encodeURIComponent(codexCliPath.trim())}` : "";
+      const statusRes = await fetch(`/api/codex/status${query}`);
       const statusData = (await statusRes.json()) as CodexStatus;
       setCodexStatus(statusData);
     } catch (error) {
@@ -109,7 +110,7 @@ export function useAiSettings() {
         message: error instanceof Error ? error.message : "설정을 불러오지 못했습니다.",
       });
     }
-  }, []);
+  }, [codexCliPath]);
 
   const refreshGeminiStatus = useCallback(async () => {
     try {
