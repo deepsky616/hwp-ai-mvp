@@ -51,6 +51,13 @@ export type GeminiLoginStatus = {
   message: string;
 };
 
+export type ClaudeStatus = {
+  authenticated: boolean;
+  email?: string;
+  subscriptionType?: string;
+  message: string;
+};
+
 type CodexLoginStartResponse = {
   ok?: boolean;
   authUrl?: string;
@@ -81,6 +88,10 @@ export function useAiSettings() {
   const [geminiLoginStatus, setGeminiLoginStatus] = useState<GeminiLoginStatus | null>(null);
   const geminiSessionRef = useRef<{ sessionId: string } | null>(null);
   const [isGeminiPolling, setIsGeminiPolling] = useState(false);
+
+  const [claudeStatus, setClaudeStatus] = useState<ClaudeStatus | null>(null);
+  const claudeSessionRef = useRef<{ sessionId: string } | null>(null);
+  const [isClaudePolling, setIsClaudePolling] = useState(false);
 
   const effectiveAiSettings = useMemo<AiSettings>(
     () => ({
@@ -122,9 +133,21 @@ export function useAiSettings() {
     }
   }, []);
 
+  const refreshClaudeStatus = useCallback(async () => {
+    try {
+      const query = claudeCliPath.trim() ? `?cliPath=${encodeURIComponent(claudeCliPath.trim())}` : "";
+      const res = await fetch(`/api/claude/status${query}`);
+      const data = (await res.json()) as ClaudeStatus;
+      setClaudeStatus(data);
+    } catch {
+      setClaudeStatus({ authenticated: false, message: "Claude 상태를 확인할 수 없습니다." });
+    }
+  }, [claudeCliPath]);
+
   useEffect(() => {
     refreshCodexSettings();
     refreshGeminiStatus();
+    refreshClaudeStatus();
     const savedProvider = window.localStorage.getItem("hwp-ai-provider") as AiProvider | null;
     const savedKey = window.localStorage.getItem("hwp-ai-api-key");
     const savedUrl = window.localStorage.getItem("hwp-ai-base-url");
@@ -143,7 +166,7 @@ export function useAiSettings() {
     if (savedGeminiPath) setGeminiCliPath(savedGeminiPath);
     if (savedAntigravityPath) setAntigravityCliPath(savedAntigravityPath);
     if (savedClaudePath) setClaudeCliPath(savedClaudePath);
-  }, [refreshCodexSettings, refreshGeminiStatus]);
+  }, [refreshCodexSettings, refreshGeminiStatus, refreshClaudeStatus]);
 
   useEffect(() => {
     const next = modelsForProvider(aiProvider);
@@ -250,6 +273,60 @@ export function useAiSettings() {
     }, 3000);
     return () => clearInterval(id);
   }, [isGeminiPolling, refreshGeminiStatus]);
+
+  useEffect(() => {
+    if (!isClaudePolling) return;
+    let isRunning = false;
+    const id = setInterval(async () => {
+      const p = claudeSessionRef.current;
+      if (!p || isRunning) return;
+      isRunning = true;
+      try {
+        const res = await fetch(`/api/claude/login/poll?session_id=${encodeURIComponent(p.sessionId)}`);
+        const data = (await res.json()) as { status: string; error?: string };
+        if (data.status === "complete") {
+          claudeSessionRef.current = null;
+          setIsClaudePolling(false);
+          setAiTestMessage("Claude 로그인이 완료되었습니다. 상태를 불러오는 중...");
+          await refreshClaudeStatus();
+          setAiTestMessage("Claude 로그인이 완료되었습니다.");
+        } else if (data.status === "error") {
+          claudeSessionRef.current = null;
+          setIsClaudePolling(false);
+          setAiTestMessage(`Claude 로그인 오류: ${data.error ?? "다시 시도해 주세요."}`);
+        }
+      } catch {
+        // 일시적 오류 무시
+      } finally {
+        isRunning = false;
+      }
+    }, 2000);
+    return () => clearInterval(id);
+  }, [isClaudePolling, refreshClaudeStatus]);
+
+  const startClaudeOauthLogin = useCallback(async () => {
+    setAiProvider("claude-cli");
+    setAiTestMessage("Anthropic 로그인을 시작합니다...");
+    setIsClaudePolling(false);
+    claudeSessionRef.current = null;
+    try {
+      const res = await fetch("/api/claude/login/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claudeCliPath: claudeCliPath.trim() || undefined }),
+      });
+      const data = (await res.json()) as { ok?: boolean; authUrl?: string; sessionId?: string; error?: string };
+      if (!res.ok || !data.authUrl || !data.sessionId) {
+        throw new Error(data.error ?? "로그인을 시작하지 못했습니다");
+      }
+      window.open(data.authUrl, "_blank", "width=600,height=760,popup=yes");
+      claudeSessionRef.current = { sessionId: data.sessionId };
+      setIsClaudePolling(true);
+      setAiTestMessage("브라우저에서 Anthropic 계정으로 로그인해 주세요. 완료되면 자동으로 감지됩니다.");
+    } catch (error) {
+      setAiTestMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, [claudeCliPath]);
 
   const startGeminiOauthLogin = useCallback(async () => {
     setAiTestMessage("Google 로그인 창을 여는 중입니다...");
@@ -368,11 +445,15 @@ export function useAiSettings() {
     setClaudeCliPath,
     geminiLoginStatus,
     isGeminiPolling,
+    claudeStatus,
+    isClaudePolling,
     refreshCodexSettings,
     refreshGeminiStatus,
+    refreshClaudeStatus,
     testAiSettings,
     startOpenAiOauthLogin,
     startGeminiOauthLogin,
     startAntigravityOauthLogin,
+    startClaudeOauthLogin,
   };
 }

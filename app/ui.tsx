@@ -97,6 +97,8 @@ export default function HwpAiMvp() {
           setAntigravityCliPath={settings.setAntigravityCliPath}
           claudeCliPath={settings.claudeCliPath}
           setClaudeCliPath={settings.setClaudeCliPath}
+          claudeStatus={settings.claudeStatus}
+          isClaudePolling={settings.isClaudePolling}
           geminiLoginStatus={settings.geminiLoginStatus}
           isGeminiPolling={settings.isGeminiPolling}
           onTest={settings.testAiSettings}
@@ -104,6 +106,7 @@ export default function HwpAiMvp() {
           onOauthLogin={settings.startOpenAiOauthLogin}
           onGeminiLogin={settings.startGeminiOauthLogin}
           onAntigravityLogin={settings.startAntigravityOauthLogin}
+          onClaudeLogin={settings.startClaudeOauthLogin}
           onClose={() => setSettingsOpen(false)}
         />
       )}

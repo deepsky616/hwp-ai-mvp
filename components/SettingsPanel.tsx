@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import type { AiProvider, CodexStatus, GeminiLoginStatus } from "../lib/useAiSettings";
+import type { AiProvider, ClaudeStatus, CodexStatus, GeminiLoginStatus } from "../lib/useAiSettings";
 import { manualInstallCommand, requiresManualInstall, type CliInstallName } from "../lib/cli-install-info";
 
 // ─── 공통 서브컴포넌트 ───────────────────────────────────────────────────────
@@ -226,6 +226,8 @@ type SettingsPanelProps = {
   setAntigravityCliPath: (p: string) => void;
   claudeCliPath: string;
   setClaudeCliPath: (p: string) => void;
+  claudeStatus: ClaudeStatus | null;
+  isClaudePolling: boolean;
   geminiLoginStatus: GeminiLoginStatus | null;
   isGeminiPolling: boolean;
   onTest: () => void;
@@ -233,6 +235,7 @@ type SettingsPanelProps = {
   onOauthLogin: () => void;
   onGeminiLogin: () => void;
   onAntigravityLogin: () => void;
+  onClaudeLogin: () => void;
   onClose: () => void;
 };
 
@@ -283,16 +286,18 @@ function WizardModal({
   const isLocal = props.aiProvider === "ollama" || props.aiProvider === "mlx" || props.aiProvider === "custom";
 
   useEffect(() => {
-    if (step === "detail" && (isCli || isOpenAiOauth)) {
+    if (step === "detail" && (isCli || isOpenAiOauth || isClaudeCli)) {
       const authed =
         props.aiProvider === "gemini-cli"
           ? props.geminiLoginStatus?.authenticated
           : props.aiProvider === "antigravity-cli"
             ? false
+          : props.aiProvider === "claude-cli"
+            ? props.claudeStatus?.authenticated
           : props.codexStatus?.authenticated;
       if (authed) completeSetup();
     }
-  }, [props.codexStatus?.authenticated, props.geminiLoginStatus?.authenticated, step, isCli, isOpenAiOauth, props.aiProvider, completeSetup]);
+  }, [props.codexStatus?.authenticated, props.geminiLoginStatus?.authenticated, props.claudeStatus?.authenticated, step, isCli, isOpenAiOauth, isClaudeCli, props.aiProvider, completeSetup]);
 
   const cliName: CliInstallName =
     props.aiProvider === "gemini-cli"
@@ -353,10 +358,18 @@ function WizardModal({
                     setPath={props.setClaudeCliPath}
                     onDetected={props.onTest}
                   />
+                  <button onClick={props.onClaudeLogin} disabled={props.isClaudePolling}>
+                    {props.isClaudePolling ? "로그인 확인 중..." : "Anthropic 계정으로 로그인"}
+                  </button>
+                  {props.claudeStatus && (
+                    <p className="settingsHint">
+                      <span className={`statusDot ${props.claudeStatus.authenticated ? "good" : "warn"}`} />
+                      {props.claudeStatus.message}
+                    </p>
+                  )}
                   <p className="settingsHint">
-                    설치 후 터미널에서 <code className="cliCode">claude</code>를 한 번 실행해 Anthropic 계정으로
-                    로그인해 주세요 (Pro/Max 구독이 그대로 사용됩니다). 로그인이 되어 있다면 바로 아래
-                    ‘연결 확인 후 시작’을 눌러 주세요.
+                    Pro/Max 구독이 그대로 사용됩니다. 버튼이 동작하지 않으면 터미널에서{" "}
+                    <code className="cliCode">claude</code>를 실행해 로그인해 주세요.
                   </p>
                 </>
               )}
@@ -411,9 +424,13 @@ function WizardModal({
                       {props.isGeminiPolling ? "로그인 확인 중..." : "Google 계정으로 로그인"}
                     </button>
                   ) : props.aiProvider === "antigravity-cli" ? (
-                    <button onClick={props.onAntigravityLogin}>
-                      Google 계정으로 로그인
-                    </button>
+                    <>
+                      <button onClick={props.onAntigravityLogin}>로그인 상태 확인</button>
+                      <p className="settingsHint">
+                        Antigravity는 앱에서 직접 로그인할 수 없습니다. 터미널에서{" "}
+                        <code className="cliCode">agy</code>를 실행해 Google 계정으로 먼저 로그인해 주세요.
+                      </p>
+                    </>
                   ) : (
                     <button onClick={props.onOauthLogin} disabled={props.isPolling}>
                       {props.isPolling ? "로그인 확인 중..." : "OpenAI 계정으로 로그인"}
@@ -513,7 +530,7 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
       : props.aiProvider === "antigravity-cli"
         ? !!props.antigravityCliPath || props.aiTestMessage.includes("Antigravity CLI 연결에 성공")
       : props.aiProvider === "claude-cli"
-        ? props.aiTestMessage.includes("Claude CLI 연결에 성공")
+        ? (props.claudeStatus?.authenticated ?? false) || props.aiTestMessage.includes("Claude CLI 연결에 성공")
       : props.aiProvider === "openai-oauth"
         ? (props.codexStatus?.authenticated ?? false)
       : props.aiProvider === "openai" || props.aiProvider === "gemini" || props.aiProvider === "custom"
@@ -527,7 +544,7 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
       : props.aiProvider === "antigravity-cli"
         ? (props.aiTestMessage || "Antigravity CLI 경로를 감지하거나 설치해 주세요.")
       : props.aiProvider === "claude-cli"
-        ? "연결 테스트를 눌러 Claude CLI 로그인 상태를 확인해 주세요."
+        ? (props.claudeStatus?.message ?? "상태 확인 중...")
       : props.aiProvider === "openai-oauth"
         ? (props.codexStatus?.message ?? "상태 확인 중...")
       : (props.codexStatus?.message ?? "상태 확인 중..."));
@@ -635,13 +652,22 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
               setPath={props.setClaudeCliPath}
               onDetected={props.onTest}
             />
-            <p className="settingsHint">
-              터미널에서 <code className="cliCode">claude</code>를 실행해 Anthropic 계정으로 로그인하면
-              Pro/Max 구독이 그대로 사용됩니다.
-            </p>
             <div className="connectionRow">
+              <button onClick={props.onClaudeLogin} disabled={props.isClaudePolling}>
+                {props.isClaudePolling ? "확인 중..." : "Anthropic 계정으로 로그인"}
+              </button>
               <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
             </div>
+            {props.claudeStatus && (
+              <p className="settingsHint">
+                <span className={`statusDot ${props.claudeStatus.authenticated ? "good" : "warn"}`} />
+                {props.claudeStatus.message}
+              </p>
+            )}
+            <p className="settingsHint">
+              Pro/Max 구독이 그대로 사용됩니다. 버튼이 동작하지 않으면 터미널에서{" "}
+              <code className="cliCode">claude</code>를 실행해 로그인해 주세요.
+            </p>
           </div>
         )}
 
@@ -661,9 +687,13 @@ function SettingsModal({ onResetSetup, ...props }: SettingsPanelProps & { onRese
               onDetected={props.onTest}
             />
             <div className="connectionRow">
-              <button onClick={props.onAntigravityLogin}>Google 계정으로 로그인</button>
+              <button onClick={props.onAntigravityLogin}>로그인 상태 확인</button>
               <button className="secondaryButton" onClick={props.onTest}>연결 테스트</button>
             </div>
+            <p className="settingsHint">
+              Antigravity는 앱에서 직접 로그인할 수 없습니다. 터미널에서{" "}
+              <code className="cliCode">agy</code>를 실행해 Google 계정으로 먼저 로그인해 주세요.
+            </p>
           </div>
         )}
 
