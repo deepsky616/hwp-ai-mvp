@@ -69,11 +69,19 @@ export function useHwpEditor() {
       const data = await file.arrayBuffer();
       const result = await requestRhwp<{ pageCount: number }>("loadFile", { fileName: file.name, data });
       setFileName(file.name);
-      setBlocks([]);
       setPendingPatches([]);
       setPreviewCards([]);
-      setStatus(`문서를 열었습니다. 쪽 수: ${result.pageCount}`);
-      setChatMessages((m) => [...m, createChatMessage("system", `${file.name} 문서를 열었습니다.`)]);
+      setExcludedPatchIds([]);
+      // 열자마자 본문을 추출해 사용자가 '추출' 단계를 몰라도 바로 지시할 수 있게 한다.
+      const extracted = await requestRhwp<DocumentBlock[]>("extractTextBlocks").catch(() => [] as DocumentBlock[]);
+      setBlocks(extracted);
+      const pCount = extracted.filter((b) => b.type === "paragraph").length;
+      const cCount = extracted.filter((b) => b.type === "tableCell").length;
+      setStatus(`문서를 열었습니다. 쪽 수: ${result.pageCount} · 본문 ${pCount}개, 표 셀 ${cCount}개`);
+      setChatMessages((m) => [
+        ...m,
+        createChatMessage("system", `${file.name} 문서를 열고 본문 ${pCount}개, 표 셀 ${cCount}개를 읽었습니다. 아래에 수정 지시를 입력해 주세요.`),
+      ]);
     } catch (error) {
       if (!shouldUseTextImportFallback(error)) {
         setStatus(error instanceof Error ? error.message : String(error));

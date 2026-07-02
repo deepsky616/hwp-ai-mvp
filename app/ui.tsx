@@ -33,11 +33,7 @@ export default function HwpAiMvp() {
       <ErrorBoundary fallback="툴바 오류 — 새로고침해 주세요">
         <Toolbar
           isBusy={editor.isBusy}
-          hasPendingPatches={editor.pendingPatches.length > 0}
           onExtract={editor.extractBlocks}
-          onSuggest={() => editor.createAiSuggestion(instruction, settings.effectiveAiSettings)}
-          onStop={editor.stopProcessing}
-          onApply={editor.applyPendingAiEdit}
           onExportHwp={editor.exportHwp}
           onExportHwpx={editor.exportHwpx}
           onExportMarkdown={editor.exportMarkdown}

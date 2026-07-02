@@ -91,7 +91,17 @@ export function ChatPanel({
         ))}
       </div>
       <div className="composer">
-        <textarea value={instruction} onChange={(e) => onInstructionChange(e.target.value)} placeholder="문서에 원하는 수정 지시를 입력하세요" />
+        <textarea
+          value={instruction}
+          onChange={(e) => onInstructionChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              if (!isBusy && instruction.trim()) onSuggest();
+            }
+          }}
+          placeholder="문서에 원하는 수정 지시를 입력하세요 (Enter로 보내기, Shift+Enter 줄바꿈)"
+        />
         <div className="composerActions">
           {isBusy ? (
             <button className="stopButton" onClick={onStop}>처리 중단</button>

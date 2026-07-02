@@ -1,10 +1,8 @@
+// AI 수정 흐름(제안 만들기·중단·반영)은 채팅 패널이 담당한다.
+// 툴바는 문서 단위 작업(다시 추출, 저장, 설정)만 맡아 중복 버튼을 없앤다.
 type ToolbarProps = {
   isBusy: boolean;
-  hasPendingPatches: boolean;
   onExtract: () => void;
-  onSuggest: () => void;
-  onStop: () => void;
-  onApply: () => void;
   onExportHwp: () => void;
   onExportHwpx: () => void;
   onExportMarkdown: () => void;
@@ -13,24 +11,20 @@ type ToolbarProps = {
 };
 
 export function Toolbar({
-  isBusy, hasPendingPatches,
-  onExtract, onSuggest, onStop, onApply,
+  isBusy,
+  onExtract,
   onExportHwp, onExportHwpx, onExportMarkdown, onExportHtml,
   onOpenSettings,
 }: ToolbarProps) {
   return (
     <section className="toolbar">
-      <button disabled={isBusy} onClick={onExtract}>본문과 표 추출</button>
-      {isBusy ? (
-        <button className="stopButton" onClick={onStop}>처리 중단</button>
-      ) : (
-        <button onClick={onSuggest}>수정 제안 만들기</button>
-      )}
-      <button disabled={isBusy || !hasPendingPatches} onClick={onApply}>제안 문서에 반영</button>
+      <button className="secondaryButton" disabled={isBusy} onClick={onExtract}>본문 다시 추출</button>
+      <span className="toolbarDivider" aria-hidden="true" />
       <button disabled={isBusy} onClick={onExportHwp}>HWP 저장</button>
       <button disabled={isBusy} onClick={onExportHwpx}>HWPX 저장</button>
-      <button disabled={isBusy} onClick={onExportMarkdown}>마크다운 저장</button>
-      <button disabled={isBusy} onClick={onExportHtml}>HTML 저장</button>
+      <button className="secondaryButton" disabled={isBusy} onClick={onExportMarkdown}>마크다운</button>
+      <button className="secondaryButton" disabled={isBusy} onClick={onExportHtml}>HTML</button>
+      <span className="toolbarSpacer" aria-hidden="true" />
       <button className="secondaryButton" disabled={isBusy} onClick={onOpenSettings}>인공지능 설정</button>
     </section>
   );

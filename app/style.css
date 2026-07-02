@@ -27,7 +27,9 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); line-height: 1.1; }
 .summary { color: var(--muted); font-size: 18px; margin-bottom: 0; }
 .fileButton { display: inline-flex; align-items: center; justify-content: center; min-width: 160px; border-radius: 14px; padding: 14px 18px; background: #111827; color: #fff; font-weight: 800; cursor: pointer; }
 .fileButton input { display: none; }
-.toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 18px; }
+.toolbarDivider { width: 1px; align-self: stretch; background: var(--line); }
+.toolbarSpacer { flex: 1; }
 .settingsCard { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; margin-bottom: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 20px; background: #fff; box-shadow: 0 12px 36px rgba(15, 23, 42, .06); }
 .settingsCard p { margin: 6px 0; color: var(--muted); line-height: 1.5; }
 .settingsCard code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; padding: 6px 8px; border-radius: 10px; background: #f1f5f9; color: #334155; }
