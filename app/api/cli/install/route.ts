@@ -30,7 +30,10 @@ type InstallCommand = {
 function buildNpmInstallCommand(pkg: string): InstallCommand {
   const npmPath = findExecutablePath("npm");
   if (!npmPath) {
-    throw new Error("npm을 찾을 수 없습니다. Node.js와 npm이 먼저 설치되어 있어야 합니다.");
+    throw new Error(
+      "npm(Node.js)을 찾을 수 없습니다. Node.js가 설치되어 있지 않다면 https://nodejs.org 에서 LTS 버전을 설치한 뒤 앱을 다시 실행해 주세요. " +
+      "이미 설치되어 있다면 위에 표시된 설치 명령을 터미널에서 직접 실행한 뒤 '경로 자동 감지'를 눌러 주세요.",
+    );
   }
 
   if (process.platform === "win32") {

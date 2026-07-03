@@ -39,8 +39,46 @@ function listDirs(parent: string): string[] {
   }
 }
 
+let cachedLoginShellPath: string | null | undefined;
+
+// Finder/Dock/탐색기에서 실행된 GUI 앱(Electron)은 로그인 셸 PATH를 물려받지
+// 못해 npm과 CLI 탐색이 실패한다. 사용자 로그인 셸에서 실제 PATH를 한 번만
+// 읽어 이후 모든 탐색에 병합한다. (macOS/Linux 전용, 5초 제한, 실패 시 무시)
+function loginShellPath(): string | null {
+  if (cachedLoginShellPath !== undefined) return cachedLoginShellPath;
+  cachedLoginShellPath = null;
+  if (process.platform === "win32") return cachedLoginShellPath;
+
+  const { spawnSync } = nodeRequire("node:child_process") as typeof import("node:child_process");
+  const shell = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
+  const marker = "__HWP_AI_PATH__";
+  // PATH를 .zshrc(대화형)에만 설정하는 사용자도 있어 -l -i 를 먼저 시도한다.
+  for (const flags of [["-l", "-i", "-c"], ["-l", "-c"]]) {
+    try {
+      const result = spawnSync(shell, [...flags, `printf '%s' "${marker}$PATH${marker}"`], {
+        timeout: 5_000,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const parts = String(result.stdout ?? "").split(marker);
+      const captured = parts.length >= 3 ? parts[1].trim() : "";
+      if (captured) {
+        cachedLoginShellPath = captured;
+        break;
+      }
+    } catch {
+      // 다음 방식으로 폴백
+    }
+  }
+  return cachedLoginShellPath;
+}
+
 function defaultPathValue(): string {
-  return process.env.PATH || process.env.Path || "";
+  const envPath = process.env.PATH || process.env.Path || "";
+  const shellPath = loginShellPath();
+  if (!shellPath) return envPath;
+  // 프로세스 PATH를 우선하고, 로그인 셸 PATH는 뒤에 덧붙인다.
+  return mergePath(shellPath, pathEntries(envPath));
 }
 
 function pathEntries(pathValue = defaultPathValue()): string[] {
@@ -89,7 +127,12 @@ function candidatePaths(name: CliName, platform = process.platform): string[] {
       join(home, ".local", "bin", "agy.cmd"),
       join(home, ".bun", "bin", `${command}.exe`),
       join(home, ".volta", "bin", `${command}.exe`),
+      join(home, "scoop", "shims", `${command}.cmd`),
+      join(home, "scoop", "shims", `${command}.exe`),
+      join(localAppData, "Microsoft", "WinGet", "Links", `${command}.exe`),
       ...(name === "claude" ? [join(home, ".claude", "local", "claude.exe")] : []),
+      // nvm-windows는 각 버전 디렉터리 바로 아래에 전역 npm CLI를 둔다.
+      ...listDirs(join(appData, "nvm")).flatMap((dir) => [join(dir, `${command}.cmd`), join(dir, `${command}.exe`)]),
       ...nvmBins,
     ];
   }
@@ -102,6 +145,9 @@ function candidatePaths(name: CliName, platform = process.platform): string[] {
     join(home, ".local", "bin", command),
     join(home, ".bun", "bin", command),
     join(home, ".volta", "bin", command),
+    join(home, ".asdf", "shims", command),
+    join(home, ".local", "share", "mise", "shims", command),
+    join(home, ".nodenv", "shims", command),
     ...(name === "claude" ? [join(home, ".claude", "local", "claude")] : []),
     ...nvmBins,
   ];
@@ -115,7 +161,7 @@ export function isAllowedCliCustomPath(name: CliName, customPath: string): boole
   return cliFileNames(name).includes(basename(expanded));
 }
 
-export function findCliPath(name: CliName, customPath?: string, pathValue = process.env.PATH || ""): string | null {
+export function findCliPath(name: CliName, customPath?: string, pathValue = defaultPathValue()): string | null {
   const custom = customPath?.trim();
   if (custom && isAllowedCliCustomPath(name, custom) && isFile(expandHome(custom))) return expandHome(custom);
 
@@ -146,6 +192,11 @@ function executableCandidatePaths(command: string, platform = process.platform):
       join(localAppData, "pnpm"),
       join(home, ".bun", "bin"),
       join(home, ".volta", "bin"),
+      join(home, "scoop", "shims"),
+      join(localAppData, "Microsoft", "WinGet", "Links"),
+      // nvm-windows: 활성 심볼릭 링크(기본 C:\nvm4w\nodejs)와 각 버전 디렉터리
+      "C:\\nvm4w\\nodejs",
+      ...listDirs(join(appData, "nvm")),
       join(systemRoot, "System32", "WindowsPowerShell", "v1.0"),
       join(systemRoot, "Sysnative", "WindowsPowerShell", "v1.0"),
       join(systemRoot, "System32"),
@@ -163,6 +214,9 @@ function executableCandidatePaths(command: string, platform = process.platform):
     join(home, ".local", "bin"),
     join(home, ".bun", "bin"),
     join(home, ".volta", "bin"),
+    join(home, ".asdf", "shims"),
+    join(home, ".local", "share", "mise", "shims"),
+    join(home, ".nodenv", "shims"),
     ...listDirs(join(home, ".nvm", "versions", "node")).map((dir) => join(dir, "bin")),
   ];
   return dirs.flatMap((dir) => executableFileNames(command, platform).map((name) => join(dir, name)));
@@ -199,7 +253,7 @@ const NPM_CLI_ENTRY_JS: Partial<Record<CliName, string[]>> = {
   claude: [join("node_modules", "@anthropic-ai", "claude-code", "cli.js")],
 };
 
-export function resolveCli(name: CliName, customPath?: string, pathValue = process.env.PATH || ""): ResolvedCli {
+export function resolveCli(name: CliName, customPath?: string, pathValue = defaultPathValue()): ResolvedCli {
   const cliPath = findCliPath(name, customPath, pathValue);
   if (!cliPath) {
     throw new Error(`${commandName(name)} CLI를 찾을 수 없습니다. CLI를 설치하거나 설정에서 실행 파일 경로를 직접 지정해 주세요.`);
