@@ -34,12 +34,14 @@ export function CliInstallBox({ cliName, onInstalled, onDetected }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cliName }),
       });
-      const data = (await res.json()) as { ok: boolean; error?: string; detectedPath?: string | null };
+      const data = (await res.json()) as { ok: boolean; error?: string; detectedPath?: string | null; managed?: boolean };
       if (data.ok) {
         setPhase("done");
         if (data.detectedPath) {
           setMsg(`설치 완료 — 경로: ${data.detectedPath}`);
           onDetected?.(data.detectedPath);
+        } else if (data.managed) {
+          setMsg("앱 내장 방식으로 설치되었습니다. 바로 로그인·연결 테스트를 진행하세요.");
         } else {
           setMsg("설치가 완료되었습니다. 경로 자동 감지를 눌러 주세요.");
         }

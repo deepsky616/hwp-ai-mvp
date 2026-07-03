@@ -147,14 +147,14 @@ export function summarizeCliError(text: string): string {
   return summary.length > 300 ? `${summary.slice(0, 300)}...` : summary;
 }
 
-function execFileAsync(command: string, args: string[], cwd = process.cwd(), envPath?: string, stdinInput?: string, timeoutMs = CLI_TIMEOUT_MS): Promise<{ stdout: string; stderr: string }> {
+function execFileAsync(command: string, args: string[], cwd = process.cwd(), envPath?: string, stdinInput?: string, timeoutMs = CLI_TIMEOUT_MS, extraEnv?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = execFileImpl(
       command,
       args,
       {
         cwd,
-        env: envPath ? { ...process.env, PATH: envPath } : process.env,
+        env: { ...process.env, ...(envPath ? { PATH: envPath } : {}), ...extraEnv },
         maxBuffer: 1024 * 1024 * 20,
         timeout: timeoutMs,
         killSignal: "SIGTERM",
@@ -194,7 +194,7 @@ function execFileAsync(command: string, args: string[], cwd = process.cwd(), env
 async function execCliAsync(name: CliName, args: string[], cwd = process.cwd(), customPath?: string, stdinInput?: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
   const { resolveCli } = await import("./cli-resolver");
   const resolved = resolveCli(name, customPath);
-  return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath, stdinInput, timeoutMs);
+  return execFileAsync(resolved.command, [...resolved.argsPrefix, ...args], cwd, resolved.envPath, stdinInput, timeoutMs, resolved.extraEnv);
 }
 
 function getClientOpenAiAuthorization(settings?: AiSettings) {

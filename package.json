@@ -21,6 +21,7 @@
     "@types/react-dom": "^19.0.2",
     "kordoc": "^2.8.0",
     "next": "^15.1.3",
+    "npm": "^10.9.8",
     "pdfjs-dist": "^5.7.284",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -39,6 +40,9 @@
   "build": {
     "appId": "kr.hwpai.editor",
     "productName": "HWP AI 편집기",
+    "asarUnpack": [
+      "**/node_modules/npm/**"
+    ],
     "files": [
       ".next/**/*",
       "app/**/*",
@@ -63,7 +67,9 @@
       "artifactName": "${productName}-${version}-windows-portable-${arch}.${ext}"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "identity": null,
       "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
     }

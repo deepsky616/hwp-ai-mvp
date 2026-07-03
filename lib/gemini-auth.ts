@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { findCliPath } from "./cli-resolver";
+import { managedCliRoot } from "./managed-cli";
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -45,6 +46,8 @@ function findGeminiBundleDir(): string | null {
   }
 
   candidates.push(
+    // 앱 내장 npm으로 설치한 관리형 설치본
+    join(managedCliRoot(), "gemini", "node_modules", "@google", "gemini-cli", "bundle"),
     join(home, ".npm-global", "lib", "node_modules", "@google", "gemini-cli", "bundle"),
     join(home, ".local", "lib", "node_modules", "@google", "gemini-cli", "bundle"),
     join(home, ".bun", "install", "global", "node_modules", "@google", "gemini-cli", "bundle"),

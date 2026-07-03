@@ -1,5 +1,7 @@
 import { basename, delimiter, dirname, isAbsolute, join, sep } from "node:path";
 import { createRequire } from "node:module";
+import { findManagedCli } from "./managed-cli";
+import type { CliInstallName } from "./cli-install-info";
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -17,6 +19,8 @@ export type ResolvedCli = {
   command: string;
   argsPrefix: string[];
   envPath: string;
+  // 관리형(앱 내장 npm) 설치본 실행에 필요한 추가 환경 변수 (예: ELECTRON_RUN_AS_NODE)
+  extraEnv?: Record<string, string>;
 };
 
 function isFile(filePath: string): boolean {
@@ -256,6 +260,16 @@ const NPM_CLI_ENTRY_JS: Partial<Record<CliName, string[]>> = {
 export function resolveCli(name: CliName, customPath?: string, pathValue = defaultPathValue()): ResolvedCli {
   const cliPath = findCliPath(name, customPath, pathValue);
   if (!cliPath) {
+    // 시스템 설치본이 없으면 앱 전용 디렉터리의 관리형 설치본을 쓴다.
+    const managed = findManagedCli(name as CliInstallName);
+    if (managed) {
+      return {
+        command: managed.command,
+        argsPrefix: managed.argsPrefix,
+        envPath: pathValue,
+        extraEnv: managed.extraEnv,
+      };
+    }
     throw new Error(`${commandName(name)} CLI를 찾을 수 없습니다. CLI를 설치하거나 설정에서 실행 파일 경로를 직접 지정해 주세요.`);
   }
 

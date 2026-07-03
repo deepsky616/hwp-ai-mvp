@@ -40,7 +40,7 @@ export async function startCodexLogin(customPath?: string): Promise<{ authUrl: s
 
   return new Promise<{ authUrl: string; sessionId: string }>((resolve, reject) => {
     const child = spawn(resolved.command, [...resolved.argsPrefix, "login"], {
-      env: { ...process.env, PATH: resolved.envPath },
+      env: { ...process.env, PATH: resolved.envPath, ...resolved.extraEnv },
       stdio: ["ignore", "pipe", "pipe"],
     });
 

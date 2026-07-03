@@ -12,14 +12,14 @@ export type ClaudeAuthStatus = {
   message: string;
 };
 
-type StatusExec = (command: string, args: string[], envPath: string) => Promise<string>;
+type StatusExec = (command: string, args: string[], envPath: string, extraEnv?: Record<string, string>) => Promise<string>;
 
-const defaultStatusExec: StatusExec = (command, args, envPath) =>
+const defaultStatusExec: StatusExec = (command, args, envPath, extraEnv) =>
   new Promise((resolve, reject) => {
     execFile(
       command,
       args,
-      { env: { ...process.env, PATH: envPath }, timeout: 15_000 },
+      { env: { ...process.env, PATH: envPath, ...extraEnv }, timeout: 15_000 },
       (error, stdout, stderr) => {
         const text = `${stdout ?? ""}\n${stderr ?? ""}`;
         // 미로그인 시에도 상태가 출력에 담겨 있으면 그대로 해석한다.
@@ -41,7 +41,7 @@ export async function getClaudeAuthStatusAsync(
   }
 
   try {
-    const output = await execStatus(resolved.command, [...resolved.argsPrefix, "auth", "status"], resolved.envPath);
+    const output = await execStatus(resolved.command, [...resolved.argsPrefix, "auth", "status"], resolved.envPath, resolved.extraEnv);
     const jsonStart = output.indexOf("{");
     const jsonEnd = output.lastIndexOf("}");
     if (jsonStart >= 0 && jsonEnd > jsonStart) {
@@ -107,7 +107,7 @@ export async function startClaudeLogin(customPath?: string): Promise<{ authUrl: 
 
   return new Promise<{ authUrl: string; sessionId: string }>((resolve, reject) => {
     const child = spawn(resolved.command, [...resolved.argsPrefix, "auth", "login", "--claudeai"], {
-      env: { ...process.env, PATH: resolved.envPath },
+      env: { ...process.env, PATH: resolved.envPath, ...resolved.extraEnv },
       stdio: ["ignore", "pipe", "pipe"],
     });
 

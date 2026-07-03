@@ -90,11 +90,22 @@ export async function POST(request: NextRequest) {
   let install: InstallCommand;
   try {
     install = buildNpmInstallCommand(CLI_INSTALL_PACKAGES[normalized]);
-  } catch (error) {
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+  } catch (npmMissingError) {
+    // 시스템에 Node.js/npm이 없으면 앱에 내장된 npm으로 앱 전용 디렉터리에 설치한다.
+    try {
+      const { installManagedCli } = await import("../../../../lib/managed-cli");
+      const result = await installManagedCli(normalized);
+      return NextResponse.json({
+        ok: true,
+        managed: true,
+        output: result.output,
+        detectedPath: null,
+      });
+    } catch (managedError) {
+      const first = npmMissingError instanceof Error ? npmMissingError.message : String(npmMissingError);
+      const second = managedError instanceof Error ? managedError.message : String(managedError);
+      return NextResponse.json({ ok: false, error: `${second}\n(${first})` }, { status: 500 });
+    }
   }
 
   try {
